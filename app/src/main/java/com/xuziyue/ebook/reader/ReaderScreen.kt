@@ -60,6 +60,7 @@ fun ReaderScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val progressText by viewModel.progressText.collectAsStateWithLifecycle()
     val decorations by viewModel.decorations.collectAsStateWithLifecycle()
+    val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
@@ -81,6 +82,7 @@ fun ReaderScreen(
             onSepia = { viewModel.changeTheme(ReadiumTheme.SEPIA) },
             onClearHighlights = { viewModel.clearHighlights() },
             highlightCount = decorations.size,
+            canHighlight = capabilities.canHighlight,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
@@ -138,6 +140,7 @@ private fun ReaderBottomBar(
     onSepia: () -> Unit,
     onClearHighlights: () -> Unit,
     highlightCount: Int,
+    canHighlight: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -158,8 +161,11 @@ private fun ReaderBottomBar(
             OutlinedButton(onClick = onLight) { Text("日") }
             OutlinedButton(onClick = onSepia) { Text("黄") }
             OutlinedButton(onClick = onDark) { Text("夜") }
-            Text("高亮 $highlightCount", style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = onClearHighlights) { Text("清") }
+            // 能力矩阵 gating（红线 #2）：canHighlight=false 时隐藏高亮计数与清除（PDF V1 生效）。
+            if (canHighlight) {
+                Text("高亮 $highlightCount", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onClearHighlights) { Text("清") }
+            }
         }
     }
 }

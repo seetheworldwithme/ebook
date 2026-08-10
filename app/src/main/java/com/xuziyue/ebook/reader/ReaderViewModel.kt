@@ -6,8 +6,10 @@ import android.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xuziyue.ebook.data.LocatorStore
+import com.xuziyue.ebook.model.ReaderCapabilities
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
+import com.xuziyue.ebook.reader.readium.toReaderCapabilities
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -65,6 +67,10 @@ class ReaderViewModel @Inject constructor(
     private val _progressText = MutableStateFlow("0%")
     val progressText: StateFlow<String> = _progressText.asStateFlow()
 
+    /** 当前 Publication 的能力矩阵（红线 #2：UI 据此 gating，不按扩展名承诺能力）。 */
+    private val _capabilities = MutableStateFlow(ReaderCapabilities.forEpub())
+    val capabilities: StateFlow<ReaderCapabilities> = _capabilities.asStateFlow()
+
     private var currentHash: String? = null
     private var latestLocator: Locator? = null
     private var persistJob: Job? = null
@@ -99,6 +105,8 @@ class ReaderViewModel @Inject constructor(
 
             result
                 .onSuccess { publication ->
+                    // 能力来自打开后的 Publication（conformsTo + isSearchable），非扩展名（红线 #2）。
+                    _capabilities.value = publication.toReaderCapabilities()
                     val savedLocator = locatorStore.readLocator(contentHash)
                     val factory = EpubNavigatorFactory(publication)
                     _uiState.value = ReaderUiState.Ready(

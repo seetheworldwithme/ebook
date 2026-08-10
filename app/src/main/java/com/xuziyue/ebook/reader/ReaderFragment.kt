@@ -133,7 +133,10 @@ class ReaderFragment : Fragment() {
 
     private val selectionActionModeCallback = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-            menu.add(0, MENU_HIGHLIGHT_ID, 0, "高亮")
+            // 能力矩阵 gating（红线 #2）：canHighlight=false 时不加「高亮」菜单项（PDF V1 生效）。
+            if (viewModel.capabilities.value.canHighlight) {
+                menu.add(0, MENU_HIGHLIGHT_ID, 0, "高亮")
+            }
             return true
         }
 

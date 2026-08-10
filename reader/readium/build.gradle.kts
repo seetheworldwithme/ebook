@@ -17,6 +17,8 @@ android {
 }
 
 dependencies {
+    // 引擎无关的阅读领域模型（ReaderCapabilities 等），引擎实现依赖引擎无关模型，方向正确。
+    implementation(project(":core:model"))
     // 用 api 让 :app 传递访问 Readium；P0V-02 在此封装打开流程与（未来）Compose↔Fragment 桥接。
     api(libs.bundles.readium)
     api(libs.androidx.webkit)
