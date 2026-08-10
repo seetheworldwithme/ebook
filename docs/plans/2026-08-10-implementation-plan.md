@@ -96,7 +96,7 @@
 ### 🟢 Readium Kotlin Toolkit 总体——成熟可用
 
 - 版本 **3.3.0**，活跃维护（issue #811/#823/#824 都是 2026-07 开的），**BSD-3-Clause**。
-- **minSdk 23 / compileSdk 36**、Kotlin 2.2.20、AGP 8.11、Compose 1.9.2、Room 2.8.1、KSP 2.2.20-2.0.3 —— 和 design.md 第 6.3 节技术栈**逐项对得上**，无版本错配。
+- **minSdk 23 / compileSdk 36**、Kotlin 2.3.20、AGP 9.0.0、Compose 1.10.5（BOM 2026.06.01）、Room 2.8.4、KSP 2.3.4、Gradle 9.1.0。（2026-08-10 立骨架时按 Readium 3.3.0 的 `libs.versions.toml` 校准；此前误记的 Kotlin 2.2.20 / AGP 8.11 是 3.1.2 旧值，已纠正。）
 - 来源：[readium/kotlin-toolkit](https://github.com/readium/kotlin-toolkit) · [Getting started 3.3.0](https://readium.org/kotlin-toolkit/3.3.0/guides/getting-started/) · [libs.versions.toml](https://github.com/readium/kotlin-toolkit/blob/master/gradle/libs.versions.toml)
 
 ### 🟡 Compose 集成——无官方支持，这是最大的工程坑
@@ -118,6 +118,16 @@
 ### 一句话判断
 
 EPUB/TXT 主线直接上 Readium 没问题；PDF 是最大坑；Compose 必须用 `AndroidFragment` + `FragmentFactory` 桥接。MVP 不承诺「PDF 能和 EPUB 一样批注」，能力矩阵照实标。
+
+### 立骨架实测确认（2026-08-10）
+
+`./gradlew assembleDebug` BUILD SUCCESSFUL，APK 45M。实测中确认/调整的点（接手必读）：
+
+- **AGP 9.0 强制内置 Kotlin**：移除所有模块的 `org.jetbrains.kotlin.android` 插件，`gradle.properties` 加 `android.builtInKotlin=true`；parcelize / serialization / compose-compiler / ksp / hilt 作为独立插件仍正常工作，`kotlin { compilerOptions {} }` 仍可用。
+- **Gradle 版本 9.1.0**（AGP 9.0.0 的最低要求；wrapper 已复用 calendar 项目的 jar 并指向 9.1.0）。
+- **阿里云镜像**：`settings.gradle.kts` 的 repositories 前置 `maven.aliyun.com` 的 google / central / gradle-plugin / jitpack 镜像，规避国内 `dl.google.com` SSL 握手失败。
+- **lifecycle 锁 2.10.0**：`app/build.gradle.kts` 用 `resolutionStrategy.eachDependency` 把 `androidx.lifecycle:*` 全族锁到 2.10.0，避免被传递依赖拉到 2.11.0（后者要求 compileSdk 37 / AGP 9.1.0，与本项目 compileSdk 36 / AGP 9.0.0 冲突）。
+- **hilt-navigation-compose 降到 1.2.0**：1.4.0（改名 hilt-lifecycle-viewmodel-compose）要 compileSdk 37 / AGP 9.1.0，降到 1.2.0 兼容。
 
 ---
 

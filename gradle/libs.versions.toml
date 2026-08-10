@@ -23,7 +23,7 @@ composeMaterial3 = "1.4.0"
 
 # Hilt / Coil（Readium 不带，自配）
 hilt = "2.60.1"
-hiltNavigationCompose = "1.4.0"
+hiltNavigationCompose = "1.2.0"
 coil = "3.5.0"
 
 # Kotlinx —— 与 Readium 对齐

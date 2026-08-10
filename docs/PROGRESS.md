@@ -167,6 +167,8 @@
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
 
+> 实现状态（2026-08-10）：**Phase 0 第一步（立工程骨架）完成。** `./gradlew assembleDebug` BUILD SUCCESSFUL，APK 45M；`testDebugUnitTest` 通过（无测试类，NO-SOURCE）。三模块（`:app` / `:core:model` / `:reader:readium`）+ Readium 3.3.0 依赖链全通。实测纠正：AGP 9.0 强制内置 Kotlin（移除 kotlin-android 插件 + `builtInKotlin=true`）、Gradle 9.1.0、阿里云镜像、lifecycle 锁 2.10.0、hilt-navigation-compose 降 1.2.0；版本矩阵已回填 implementation-plan §4。下一步 `P0V-01/02`（Compose 桥接 + 打开 EPUB）。**仅编译 + 单测，未真机回归。**
+
 > 实现状态（2026-08-10）：grilling 收尾 + Readium 调研落盘。MVP 范围收窄为 EPUB + TXT，**PDF 整体降级到 V1**（`P0V-03` 标 ⏸）；第 12 节 5 条待确认决策全部确认；开发执行计划与决策写入 `docs/plans/2026-08-10-implementation-plan.md`；design.md 第 1 / 2.2 / 10 / 12 节回写规格级更新。42 项需求 ID 计数不变（READ-05/07 的 PDF 部分随 PDF 推后，EPUB/TXT 部分仍 P0）。
 
 > 实现状态（2026-08-10）：建立 `PROGRESS.md`，从设计文档第 4 / 10 / 11 / 12 节抽取全部 42 项需求 + 5 项 Phase 0 验证 + 7 项发布门槛，初始状态均为 ⬜。为 4.6 节的非表格项分配 SET-01~07 以便逐项跟踪。
