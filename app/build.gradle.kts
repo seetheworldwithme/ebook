@@ -70,6 +70,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.fragment.compose)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.webkit)
     debugImplementation(libs.compose.ui.tooling)
 
@@ -87,4 +89,7 @@ dependencies {
     implementation(libs.timber)
 
     testImplementation(libs.junit)
+    // 提供真实 org.json 实现：Android unit test 默认用 android.jar 的 org.json stub（方法抛 not mocked），
+    // 而 PersistedLocator / Locator 的序列化测试依赖真实 JSONObject 行为。
+    testImplementation("org.json:json:20240303")
 }

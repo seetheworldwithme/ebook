@@ -17,7 +17,12 @@ android {
 }
 
 dependencies {
-    // 用 api 让 :app 传递访问 Readium；下一步 P0V-02 在此封装 Compose↔Fragment 桥接。
+    // 用 api 让 :app 传递访问 Readium；P0V-02 在此封装打开流程与（未来）Compose↔Fragment 桥接。
     api(libs.bundles.readium)
     api(libs.androidx.webkit)
+    implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(libs.junit)
+    // 提供真实 org.json 实现（同 :app，规避 android.jar 的 org.json stub）。
+    testImplementation("org.json:json:20240303")
 }

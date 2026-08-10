@@ -23,7 +23,7 @@
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 0 | 0 |
 
-> 当前进度：0 / 42（项目处于规划阶段，Android 工程尚未初始化）。
+> 当前进度：0 / 42（Phase 0 进行中：P0V-01/02 代码完成待真机回归，详见文末变更记录）。
 
 ---
 
@@ -31,8 +31,8 @@
 
 | ID | 状态 | 验证项 |
 | --- | --- | --- |
-| P0V-01 | ⬜ | 接入 Readium，打开代表性中英文 EPUB 2/3、固定版式（PDF 降 V1，见 P0V-03） |
-| P0V-02 | ⬜ | Compose + Navigator Fragment 桥接、Locator 恢复、排版偏好、Decoration API |
+| P0V-01 | 🚧 | 接入 Readium，打开代表性中英文 EPUB 2/3、固定版式（PDF 降 V1，见 P0V-03）。代码完成（Alice EPUB2 已能打开），待真机验格式覆盖 |
+| P0V-02 | 🚧 | Compose + Navigator Fragment 桥接、Locator 恢复、排版偏好、Decoration API。代码完成，待真机验旋转/后台/强杀恢复（核心必过） |
 | P0V-03 | ⏸ V1 | PDF 验证整体推后到 V1（MVP 不含 PDF）。已知关键点：文字批注/选择不支持(issue #823)、off-by-one 进度 bug(#811)、16KB 对齐、实际依赖 marain87:1.9.8。详见 implementation-plan §3/§4 |
 | P0V-04 | ⬜ | TXT 编码探测与内部 Publication 原型 |
 | P0V-05 | ⬜ | 输出能力矩阵实测结果；未通过能力从 MVP UI 中隐藏 |
@@ -166,6 +166,10 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-10）：**修复真机点「读内置样本 Alice」闪退（真机回归的前置阻塞）。** 根因：`MainActivity` 原继承 `ComponentActivity`，而 `ReaderScreen` 用 `AndroidFragment<ReaderFragment>`（androidx.fragment.compose）桥接 Readium 的 `EpubNavigatorFragment`；`AndroidFragment` 内部走 `FragmentManager.findFragmentManager()`，要求 Compose 宿主是 `FragmentActivity` 的子类，而 `ComponentActivity` 并非其子类（关系是 `FragmentActivity` → `ComponentActivity`）→ 进入 reader 瞬间抛 `IllegalStateException: View ... is not within a subclass of FragmentActivity` 闪退（welcome 页不碰 Fragment，故主界面正常）。修复：`MainActivity : FragmentActivity()`（`FragmentActivity` 继承自 `ComponentActivity`，`setContent`/`enableEdgeToEdge`/`@AndroidEntryPoint` 行为完全不变，依赖 `androidx.fragment.ktx` 已在）。**测试证据**：`./gradlew assembleDebug` BUILD SUCCESSFUL；`testDebugUnitTest` + `lintDebug` BUILD SUCCESSFUL；真机回归（vivo PD2329，Android）——点「读内置样本 Alice」已正常打开阅读界面，不再闪退。P0V-01/02 仍维持 🚧：闪退已解除，可继续按 `docs/P0V-02-真机验证清单.md` 跑旋转/后台/强杀 Locator 恢复三场景 + EPUB3/中文/FXL 格式覆盖。
+
+> 实现状态（2026-08-10）：**P0V-01/02 代码实现完成，待徐先生真机回归。** Compose 桥接 Readium：`AndroidFragment<ReaderFragment>` + `childFragmentManager.fragmentFactory` 托管 `EpubNavigatorFragment`；进程重建用 `createDummyFactory()` 防 `super.onCreate` 崩 → uiState Ready 后换真实 factory；旋转时 EpubNavigatorFragment 自带 locator SavedState 恢复。Locator 恢复：DataStore + `PersistedLocator(schemaVersion=1)`，`currentLocator` 防抖 1.5s 落盘 + onStop flush + 进程重建重 open + 读 Locator 作 initialLocator。打开流程 `AssetRetriever.retrieve → PublicationOpener.open`（200MB 上限，红线 #4）。实测纠正多处 API：`PublicationOpener`（无 Streamer）、`Try.mapFailure/getOrElse`（getOrElse 是扩展需 import）、`DefaultPublicationParser(pdfFactory=null)`、`createFragmentFactory` 的 configuration 有默认值、`createDummyFactory()` public、`currentLocator` 是 StateFlow 属性（非回调）、`Listener` 只需 override `onExternalLinkActivated`。**测试**：`testDebugUnitTest` **9 passed**（PersistedLocator 往返 5 + SHA-256 4）；`assembleDebug` + `lintDebug` BUILD SUCCESSFUL（APK 49MB，含内置 Alice EPUB2）。**LocatorJsonTest 移除**（Locator.fromJSON 内部用 android.net.Uri，unit test stub 跑不了，真机集成验证）。**仅编译 + 单测，未真机回归**——P0V-01/02 标 🚧，待徐先生按 `docs/P0V-02-真机验证清单.md` 跑旋转/后台/强杀三场景后转 ✅。架构注记：VM 暂绑 Activity scope（与 ReaderFragment activityViewModels 共享），Phase 1 优化 per-book scope；样本 Alice(EPUB2) 内置，EPUB3/中文/FXL 经 SAF 自传。
 
 > 实现状态（2026-08-10）：**Phase 0 第一步（立工程骨架）完成。** `./gradlew assembleDebug` BUILD SUCCESSFUL，APK 45M；`testDebugUnitTest` 通过（无测试类，NO-SOURCE）。三模块（`:app` / `:core:model` / `:reader:readium`）+ Readium 3.3.0 依赖链全通。实测纠正：AGP 9.0 强制内置 Kotlin（移除 kotlin-android 插件 + `builtInKotlin=true`）、Gradle 9.1.0、阿里云镜像、lifecycle 锁 2.10.0、hilt-navigation-compose 降 1.2.0；版本矩阵已回填 implementation-plan §4。下一步 `P0V-01/02`（Compose 桥接 + 打开 EPUB）。**仅编译 + 单测，未真机回归。**
 

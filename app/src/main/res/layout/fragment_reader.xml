@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ReaderFragment 布局。navigator_container 承载 EpubNavigatorFragment。
+  根用 FrameLayout（EpubNavigatorFragment 内部用 ConstraintLayout 托管 R2ViewPager，
+  由 Readium 自己的 readium_navigator_viewpager 布局处理，与我们的容器无关）。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/navigator_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</FrameLayout>

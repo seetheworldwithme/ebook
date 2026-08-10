@@ -14,8 +14,10 @@ androidxCore = "1.18.0"
 androidxLifecycle = "2.10.0"
 androidxNavigation = "2.9.7"
 androidxFragment = "1.8.9"
+androidxFragmentCompose = "1.8.9"
 androidxWebkit = "1.15.0"
 androidxRoom = "2.8.4"
+androidxDatastore = "1.1.7"
 
 # Compose
 composeBom = "2026.06.01"
@@ -49,10 +51,12 @@ androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lif
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "androidxNavigation" }
 androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "androidxFragment" }
+androidx-fragment-compose = { group = "androidx.fragment", name = "fragment-compose", version.ref = "androidxFragmentCompose" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "androidxWebkit" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "androidxRoom" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "androidxRoom" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "androidxRoom" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "androidxDatastore" }
 
 # Compose（版本由 BOM 接管，单个不写 version）
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
