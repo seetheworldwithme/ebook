@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xuziyue.ebook.data.LocatorStore
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
+import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -45,6 +46,7 @@ import java.io.File
 class ReaderViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val openBookUseCase: OpenBookUseCase,
+    private val openTxtUseCase: OpenTxtPublicationUseCase,
     private val locatorStore: LocatorStore,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
@@ -86,8 +88,16 @@ class ReaderViewModel @Inject constructor(
 
             val filePath = locatorStore.readFilePath(contentHash)
                 ?: File(context.filesDir, "books/$contentHash.epub").absolutePath
+            val file = File(filePath)
 
-            openBookUseCase.open(File(filePath))
+            // 按扩展名分流：.txt → 转 EPUB 缓存后打开（P0V-04 方案 A）；其余 → 原 EPUB 路径
+            val result = if (filePath.endsWith(".txt", ignoreCase = true)) {
+                openTxtUseCase.open(file, contentHash = contentHash)
+            } else {
+                openBookUseCase.open(file)
+            }
+
+            result
                 .onSuccess { publication ->
                     val savedLocator = locatorStore.readLocator(contentHash)
                     val factory = EpubNavigatorFactory(publication)

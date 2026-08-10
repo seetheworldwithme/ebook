@@ -125,6 +125,10 @@ private fun WelcomeScreen(
             OutlinedButton(onClick = { launcher.launch(arrayOf("application/epub+zip", "*/*")) }) {
                 Text("选择 EPUB 文件")
             }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { launcher.launch(arrayOf("text/plain")) }) {
+                Text("选择 TXT 文件")
+            }
         }
     }
 }

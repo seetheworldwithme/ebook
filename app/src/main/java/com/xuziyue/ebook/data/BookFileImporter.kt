@@ -2,16 +2,17 @@ package com.xuziyue.ebook.data
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import java.io.File
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * EPUB 文件导入器（Phase 0 极简版）。
+ * EPUB / TXT 文件导入器（Phase 0 极简版）。
  *
- * 两条来源，都复制到应用私有目录 `filesDir/books/{contentHash}.epub`，原文件被删除 / 移动后仍可读：
- * 1. [importFromUri]：SAF 文件选择器返回的 `content://` Uri。
+ * 两条来源，都复制到应用私有目录 `filesDir/books/{contentHash}.{ext}`，原文件被删除 / 移动后仍可读：
+ * 1. [importFromUri]：SAF 文件选择器返回的 `content://` Uri（按来源扩展名存 `.txt` / `.epub`）。
  * 2. [copyAssetEpub]：内置 assets 样本（如 Alice），零摩擦验证。
  *
  * - 不申请 `MANAGE_EXTERNAL_STORAGE`（CLAUDE.md 红线 #3），只用 SAF / assets。
@@ -26,13 +27,14 @@ class BookFileImporter(private val context: Context) {
     private val booksDir: File
         get() = File(context.filesDir, "books").apply { if (!exists()) mkdirs() }
 
-    /** 从 SAF Uri 导入，返回 [ImportedBook]。 */
+    /** 从 SAF Uri 导入，按来源扩展名存储，返回 [ImportedBook]。 */
     suspend fun importFromUri(uri: Uri): Result<ImportedBook> = withContext(Dispatchers.IO) {
         runCatching {
-            val (hash, file) = copyWithHash {
+            val ext = extensionOf(uri) ?: "epub"
+            val (hash, file) = copyWithHash({
                 context.contentResolver.openInputStream(uri)
                     ?: throw java.io.IOException("无法打开所选文件：$uri")
-            }
+            }, ext)
             ImportedBook(hash, file)
         }
     }
@@ -40,16 +42,27 @@ class BookFileImporter(private val context: Context) {
     /** 从内置 assets 复制 EPUB 样本（如 Alice），返回 [ImportedBook]。 */
     suspend fun copyAssetEpub(assetName: String): Result<ImportedBook> = withContext(Dispatchers.IO) {
         runCatching {
-            val (hash, file) = copyWithHash { context.assets.open(assetName) }
+            val (hash, file) = copyWithHash({ context.assets.open(assetName) }, "epub")
             ImportedBook(hash, file)
         }
     }
 
+    /** 从 SAF Uri 解析文件扩展名（小写）；无扩展名或查询失败返回 null（调用方兜底 epub）。 */
+    private fun extensionOf(uri: Uri): String? {
+        val name = context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+            } else null
+        } ?: return null
+        val dot = name.lastIndexOf('.')
+        return if (dot in 0 until name.length - 1) name.substring(dot + 1).lowercase() else null
+    }
+
     /**
-     * 流式复制到临时文件并同时计算 SHA-256；完成后原子重命名到 `{hash}.epub`。
-     * 若 `{hash}.epub` 已存在则直接复用（去重），临时文件删除。
+     * 流式复制到临时文件并同时计算 SHA-256；完成后原子重命名到 `{hash}.{ext}`。
+     * 若 `{hash}.{ext}` 已存在则直接复用（去重），临时文件删除。
      */
-    private fun copyWithHash(openInput: () -> InputStream): Pair<String, File> {
+    private fun copyWithHash(openInput: () -> InputStream, ext: String): Pair<String, File> {
         val tmp = File(booksDir, "importing-${System.nanoTime()}.tmp")
         try {
             val hash = openInput().use { input ->
@@ -57,7 +70,7 @@ class BookFileImporter(private val context: Context) {
                     input.copyToWithHash(output)
                 }
             }
-            val target = File(booksDir, "$hash.epub")
+            val target = File(booksDir, "$hash.$ext")
             if (target.exists()) {
                 tmp.delete() // hash 重复，复用已有
             } else {

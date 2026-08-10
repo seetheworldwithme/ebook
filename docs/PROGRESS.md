@@ -23,7 +23,7 @@
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 0 | 0 |
 
-> 当前进度：0 / 42（Phase 0：P0V-02 ✅ 真机全过；P0V-01 待 EPUB3/中文/FXL 格式覆盖；P0V-04 核心层完成待 Publication 接线（依赖已满足）；P0V-05 待做。详见文末变更记录）。
+> 当前进度：0 / 42（Phase 0：P0V-02 ✅、P0V-04 ✅ 真机通过；P0V-01 待 EPUB3/中文/FXL 格式覆盖；P0V-05 待做。详见文末变更记录）。
 
 ---
 
@@ -34,7 +34,7 @@
 | P0V-01 | 🚧 | 接入 Readium 打开代表性 EPUB。真机（vivo PD2329）已验 Alice(EPUB2) 正常打开/翻页/显示；EPUB3/中文/固定版式仍待经 SAF 自传验证 |
 | P0V-02 | ✅ | Compose 桥接+Locator 恢复+排版偏好+Decoration。真机（vivo PD2329）全过：Locator 恢复三场景（旋转/后台被杀/强杀，19%→19%）；主题日/黄/夜+字号实时生效；Decoration 高亮——长按选中→系统菜单「高亮」→selection.locator→黄色渲染，翻页往返+旋转后保留 |
 | P0V-03 | ⏸ V1 | PDF 验证整体推后到 V1（MVP 不含 PDF）。已知关键点：文字批注/选择不支持(issue #823)、off-by-one 进度 bug(#811)、16KB 对齐、实际依赖 marain87:1.9.8。详见 implementation-plan §3/§4 |
-| P0V-04 | 🚧 | TXT 编码探测与内部 Publication 原型（核心解析层：编码探测+章节切分+单测已完成；TXT→Publication/Navigator 接线待做——P0V-02 已通过，接线依赖已满足） |
+| P0V-04 | ✅ | TXT→Readium 接线：TXT 生成标准 EPUB 复用 EPUB 链路。真机（vivo PD2329）《万相之王》能打开/翻页/中文不乱码/夜间主题/横屏旋转恢复；42 单测过 |
 | P0V-05 | ⬜ | 输出能力矩阵实测结果；未通过能力从 MVP UI 中隐藏 |
 
 > Phase 0 未全部 ✅ 前，不要开始 Phase 1（MVP）功能开发。
@@ -166,6 +166,8 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-10）：**P0V-04 TXT→Readium 接线完成，真机回归通过，转 ✅。** 方案：Readium 无原生 TXT 解析器（`AssetRetriever` 嗅探 .txt→`ResourceAsset`，`EpubParser` 第一步要求 `ContainerAsset` 必失败，已核 `EpubParser.kt`/`AssetRetriever.kt` 源码），故把 TXT 章节生成标准 EPUB 3.0，复用 P0V-02 已验证的 EPUB 全链路（`EpubNavigatorFactory`/`EpubNavigatorFragment`/Locator/Decoration/排版偏好全不动）。新增 2 文件 + 改 5 文件：① **`TxtEpubConverter`**（纯 Kotlin `java.util.zip`，零 Readium/Android 依赖，可单测）：`TxtBook`→EPUB ZIP，mimetype STORED 首项 + `META-INF/container.xml` + `OEBPS/content.opf`(metadata/manifest/spine) + `nav.xhtml`(`epub:type=toc`) + `toc.ncx` + 每章 `chapter-{i}.xhtml`（按行段落化、XML 转义、统一 UTF-8 输出）；EPUB 最小结构逐文件核对 Readium `EpubParser`/`PackageDocument`/`NavigationDocumentParser`/`NcxParser` 源码硬性要求（OPF 三子元素、命名空间、nav epub:type、XHTML ns）。② **`OpenTxtPublicationUseCase`**（与 `OpenBookUseCase` 并列、不合并以保 EPUB 路径 100% 不动，`Try<Publication,OpenBookError>` + `Dispatchers.IO`）：parse→convert→缓存 `cacheDir/txt-converted/{contentHash}.epub`（命中即复用、失败删半成品红线#4）→`retrieve(file, MediaType.EPUB)`→`publicationOpener.open`。③ `OpenBookError` 加 `EncodingChoiceNeeded`/`TxtFailed`/`TxtConvertFailed`。④ 接线：`ReaderViewModel.openPublication` 按 `.txt` 后缀分流（EPUB 分支不变）；`BookFileImporter` 按来源扩展名存 `.txt`/`.epub`（SAF `DISPLAY_NAME`，contentHash 仍基于原字节）；`MainActivity` Welcome 加「选择 TXT 文件」按钮（mime `text/plain`）；`ReaderModule` DI 注入 `TxtParser`/`TxtEpubConverter`/`OpenTxtPublicationUseCase`。**范围决策**（徐先生确认）：编码手选 UI 推后 P1（`NeedsEncodingChoice`→可理解错误，留 candidates 接口，P1 加弹窗调 `parseWithEncoding`）；TXT→EPUB 转换**打开时**生成并缓存（磁盘存原 txt 语义干净，首开慢后续秒开，cacheDir 系统可回收）。**测试**：`:reader:readium:testDebugUnitTest` **42 passed / 0 failed / 0 skipped**（含 `TxtEpubConverterTest` 9 个结构断言：mimetype STORED/章节数/container.xml/content.opf manifest+spine+nav 标记/nav epub:type/ncx navPoint/中文 UTF-8 不乱码/XML 转义/单章兜底；`TxtEpubConverterWanxiangTest`《万相之王》10MB/1796 章端到端真跑：章节数一致、mimetype STORED、首章「大夏国」UTF-8 不乱码——本地样本存在故非 skip）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（DI 闭环、`MediaType.EPUB` 正确、Hilt 注入无缺、APK 打包成功；仅 2 个既有 warning：`@ApplicationContext` target KT-73255、`ArrowBack` deprecated，均非本次引入）。**真机回归（vivo PD2329，徐先生连机）通过**：选《万相之王》.txt → 能打开（不崩）→ 翻页内容推进 → **中文 GB18030→UTF-8 不乱码** → 夜间主题黑底白字生效 → 横屏旋转 reader 正常重建（Locator 机制复用 P0V-02）。**踩坑**：首次真机白屏，根因 converter `content.opf` manifest item `href="chapter-{i}"` 漏 `.xhtml` 扩展名 → Readium readingOrder 指向无扩展 href 找不到资源 → 读空 → `ReadiumCss.injectHtml` 正则找不到 `<head>` 抛 `No <head> opening tag` → WebView chrome-error 白屏（单测断言只查 `<item id="chap-0"` 未查完整 href 故漏）。修复：href 补 `.xhtml` + 单测加 href 断言 + title 改用首章标题（原误用 hash）；修后删 `cacheDir/txt-converted` 旧缓存重新生成 EPUB（缓存命中会复用 bug 版），Readium 接受，正文正常显示。**P0V-04 转 ✅。** 设备旋转设置测试后已还原。
 
 > 实现状态（2026-08-10）：**P0V-02 Decoration 高亮修复完成，P0V-02 转 ✅。** 根因（前次回归发现）：`addTestHighlight()` 用页级 `currentLocator` 做 Decoration locator，缺精确 DOM 文本范围，Readium 渲染不出。修复（对齐 Readium test-app `VisualReaderFragment`）：① `ReaderViewModel` 删 `addTestHighlight`，加 `addHighlight(locator: Locator)`（seq 计数生成 id）；② `ReaderFragment` 创建 navigator 时在 `EpubNavigatorFragment.Configuration` 设 `selectionActionModeCallback`（`android.view.ActionMode.Callback`，framework 类型，不需 AppCompatActivity——MainActivity 的 FragmentActivity 即可），`onCreateActionMode` 动态 add「高亮」菜单项，`onActionItemClicked` 时 `navigator.currentSelection()?.locator → viewModel.addHighlight → navigator.clearSelection()`；③ `ReaderScreen` 底栏去掉旧的「加高亮」按钮（改为长按选中触发），保留计数/清。装饰渲染经既有 `decorations.collect{ applyDecorations(it,"highlights") }`，selection locator 含精确 DOM 范围故能渲染。**真机回归（vivo PD2329，徐先生手动点高亮）**：长按选词→点「高亮」→该词变黄 + 计数 0→1 ✅；翻页再翻回黄色高亮仍在 + 计数保持 ✅；旋转横屏高亮保留 + 无崩溃 ✅。**P0V-02 全过**：Locator 三场景（核心必过）+ 主题/字号 + Decoration 高亮。踩坑：adb 自动化点不中系统 ActionMode 浮层（坐标不固定 + uiautomator 抓不到浮层），「点高亮」步骤由徐先生手指完成。隐私：selection locator 的正文摘录不入日志。剩余 Phase 0：P0V-01 格式覆盖（EPUB3/中文/FXL 经 SAF 自传）、P0V-04 TXT→Publication 接线（P0V-02 已通过，依赖满足）、P0V-05 能力矩阵。
 
