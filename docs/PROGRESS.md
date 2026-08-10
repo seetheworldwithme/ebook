@@ -23,7 +23,7 @@
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 0 | 0 |
 
-> 当前进度：0 / 42（Phase 0 进行中：P0V-01/02 代码完成待真机回归，详见文末变更记录）。
+> 当前进度：0 / 42（Phase 0：P0V-02 ✅ 真机全过；P0V-01 待 EPUB3/中文/FXL 格式覆盖；P0V-04 核心层完成待 Publication 接线（依赖已满足）；P0V-05 待做。详见文末变更记录）。
 
 ---
 
@@ -31,10 +31,10 @@
 
 | ID | 状态 | 验证项 |
 | --- | --- | --- |
-| P0V-01 | 🚧 | 接入 Readium，打开代表性中英文 EPUB 2/3、固定版式（PDF 降 V1，见 P0V-03）。代码完成（Alice EPUB2 已能打开），待真机验格式覆盖 |
-| P0V-02 | 🚧 | Compose + Navigator Fragment 桥接、Locator 恢复、排版偏好、Decoration API。代码完成，待真机验旋转/后台/强杀恢复（核心必过） |
+| P0V-01 | 🚧 | 接入 Readium 打开代表性 EPUB。真机（vivo PD2329）已验 Alice(EPUB2) 正常打开/翻页/显示；EPUB3/中文/固定版式仍待经 SAF 自传验证 |
+| P0V-02 | ✅ | Compose 桥接+Locator 恢复+排版偏好+Decoration。真机（vivo PD2329）全过：Locator 恢复三场景（旋转/后台被杀/强杀，19%→19%）；主题日/黄/夜+字号实时生效；Decoration 高亮——长按选中→系统菜单「高亮」→selection.locator→黄色渲染，翻页往返+旋转后保留 |
 | P0V-03 | ⏸ V1 | PDF 验证整体推后到 V1（MVP 不含 PDF）。已知关键点：文字批注/选择不支持(issue #823)、off-by-one 进度 bug(#811)、16KB 对齐、实际依赖 marain87:1.9.8。详见 implementation-plan §3/§4 |
-| P0V-04 | ⬜ | TXT 编码探测与内部 Publication 原型 |
+| P0V-04 | 🚧 | TXT 编码探测与内部 Publication 原型（核心解析层：编码探测+章节切分+单测已完成；TXT→Publication/Navigator 接线待做——P0V-02 已通过，接线依赖已满足） |
 | P0V-05 | ⬜ | 输出能力矩阵实测结果；未通过能力从 MVP UI 中隐藏 |
 
 > Phase 0 未全部 ✅ 前，不要开始 Phase 1（MVP）功能开发。
@@ -166,6 +166,12 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-10）：**P0V-02 Decoration 高亮修复完成，P0V-02 转 ✅。** 根因（前次回归发现）：`addTestHighlight()` 用页级 `currentLocator` 做 Decoration locator，缺精确 DOM 文本范围，Readium 渲染不出。修复（对齐 Readium test-app `VisualReaderFragment`）：① `ReaderViewModel` 删 `addTestHighlight`，加 `addHighlight(locator: Locator)`（seq 计数生成 id）；② `ReaderFragment` 创建 navigator 时在 `EpubNavigatorFragment.Configuration` 设 `selectionActionModeCallback`（`android.view.ActionMode.Callback`，framework 类型，不需 AppCompatActivity——MainActivity 的 FragmentActivity 即可），`onCreateActionMode` 动态 add「高亮」菜单项，`onActionItemClicked` 时 `navigator.currentSelection()?.locator → viewModel.addHighlight → navigator.clearSelection()`；③ `ReaderScreen` 底栏去掉旧的「加高亮」按钮（改为长按选中触发），保留计数/清。装饰渲染经既有 `decorations.collect{ applyDecorations(it,"highlights") }`，selection locator 含精确 DOM 范围故能渲染。**真机回归（vivo PD2329，徐先生手动点高亮）**：长按选词→点「高亮」→该词变黄 + 计数 0→1 ✅；翻页再翻回黄色高亮仍在 + 计数保持 ✅；旋转横屏高亮保留 + 无崩溃 ✅。**P0V-02 全过**：Locator 三场景（核心必过）+ 主题/字号 + Decoration 高亮。踩坑：adb 自动化点不中系统 ActionMode 浮层（坐标不固定 + uiautomator 抓不到浮层），「点高亮」步骤由徐先生手指完成。隐私：selection locator 的正文摘录不入日志。剩余 Phase 0：P0V-01 格式覆盖（EPUB3/中文/FXL 经 SAF 自传）、P0V-04 TXT→Publication 接线（P0V-02 已通过，依赖满足）、P0V-05 能力矩阵。
+
+> 实现状态（2026-08-10）：**P0V-02 真机回归（vivo PD2329，徐先生连机，adb 自动化执行）。** ① 点「读内置样本 Alice」**不再闪退**（FragmentActivity 修复生效），EPUB2 正常打开/左滑翻页/顶栏进度显示。② **Locator 恢复三场景全过**（基准 19%）：旋转横屏→19%✅（pid 9364 不变）；Home + am kill 进程重建（pid 9364→12652）→19%✅；force-stop 强杀冷启重开（pid→13576）→19%✅；全程无崩溃。③ 主题日/黄/夜即时生效（夜间黑底白字、护眼米黄底）；字号 A+/- 响应。④ ⚠️**Decoration 高亮未渲染**：点底部「加高亮」（uiautomator content-desc 确认命中，调 `applyDecorations(decorations,"highlights")`）后翻页再翻回，正文无任何黄色着色（三次截图 + logcat 无报错）。根因疑似 `ReaderViewModel.addTestHighlight()` 用 `latestLocator`（currentLocator 页级定位）作 Decoration locator，缺精确 DOM 文本范围（CFI/range），Readium 无法定位文本涂色 → 静默不渲染。**结论**：P0V-02 维持 🚧——核心必过（Locator 恢复）主体达成，Decoration 高亮渲染项未过，待改用文本选择产生的精确 locator（或定位到具体段落）重验。证据方式：uiautomator dump 抓顶栏「进度 N%」量化对比 + screencap 留证；设备旋转设置测试后已还原。
+
+> 实现状态（2026-08-10）：**P0V-04 TXT 解析核心层完成（编码探测 + 章节切分 + 单测），🚧。** 新增 `:reader:readium` 模块 `txt/` 包 6 个源文件 + 4 个测试文件，纯 Kotlin / `java.nio.charset`，零 Android/Readium/Compose 依赖，可独立单测。**编码探测器**（`TxtEncodingDetector`）：BOM 优先（UTF-8/UTF-16）→ 无 BOM 走严格 UTF-8 整流校验（`CharsetDecoder`+`REPORT`）→ 失败再走 GB18030（GBK 超集）→ 都失败返回 `NeedsUserChoice`（候选 UTF-8/GB18030/GBK/Big5/UTF-16），对齐红线 #5 绝不静默乱码。理论依据并实测验证：GBK lead/trail 字节结构几乎必然违反 UTF-8 续字节规则（《万相之王》第 0 字节 `0xCD` 即失败）。**章节切分器**（`TxtChapterSplitter`）：行首锚定 + `matchEntire` 整行匹配 `第[NUM]+章`（兼容阿拉伯+中文小写/大写数字）+ 序章/楔子/番外等特殊标题；front-matter 单独成「简介」章；无标题纯文本兜底单章；行尾归一化 CRLF/CR/LF。**门面**（`TxtParser`）三态 `Success/NeedsEncodingChoice/Failure`，50MB 硬上限（`FileTooLarge`）+ 空文件（`EmptyFile`）+ 不存在（`FileNotFound`）+ 异常兜底（红线 #4）；`parse()` 只读一次字节复用给 detect/decode。**实测《万相之王》（10.25MB GB18030 无 BOM）**：编码探测→GB18030 正确；章节 1796/1796 召回、**零误切**（正文里的「第三章」全被行首锚定排除）；首章「第1章 我有三个相宫」、正文含「大夏国」、rawLength=10253493；16 个校对版「书名+章节粘连」合并行因行首非「第」漏匹配（已知下限，宁漏不误切）。**踩坑**：Gradle `Test` 任务 workingDir 默认是模块目录 `reader/readium/`，导致本地集成测试相对路径 `samples/local/...` 解析失败→测试永远跳过；已在 `reader/readium/build.gradle.kts` 用 `tasks.withType<Test>().configureEach { workingDir = rootProject.projectDir }` 修复。`file -I` 对 GBK 误报 `unknown-8bit` 已印证不可信，自研探测是必要的。**测试覆盖**：`:reader:readium:testDebugUnitTest` **32 passed / 0 failed / 0 skipped**（EncodingDetector 10 + Splitter 13 + Parser 7 + 《万相之王》本地集成 2）；`:app:assembleDebug` BUILD SUCCESSFUL（依赖图无破坏）。本地集成测试在样本存在时真跑（skipped=0）。**能力边界 / 推后**：TXT → Readium `Publication` 转换、Navigator/Compose 接线本次**不做**，推后到 P0V-02（Compose↔Fragment 桥接进程重建鲁棒性）真机验证通过后——核心层先独立完成并单测，接线依赖那条尚未真机放行的桥。P0V-04 维持 🚧，待接线完成转 ✅。**仅编译 + 单测 + 本地样本集成，未真机回归**（核心层纯 JVM 无 UI，无需真机）。
 
 > 实现状态（2026-08-10）：**修复真机点「读内置样本 Alice」闪退（真机回归的前置阻塞）。** 根因：`MainActivity` 原继承 `ComponentActivity`，而 `ReaderScreen` 用 `AndroidFragment<ReaderFragment>`（androidx.fragment.compose）桥接 Readium 的 `EpubNavigatorFragment`；`AndroidFragment` 内部走 `FragmentManager.findFragmentManager()`，要求 Compose 宿主是 `FragmentActivity` 的子类，而 `ComponentActivity` 并非其子类（关系是 `FragmentActivity` → `ComponentActivity`）→ 进入 reader 瞬间抛 `IllegalStateException: View ... is not within a subclass of FragmentActivity` 闪退（welcome 页不碰 Fragment，故主界面正常）。修复：`MainActivity : FragmentActivity()`（`FragmentActivity` 继承自 `ComponentActivity`，`setContent`/`enableEdgeToEdge`/`@AndroidEntryPoint` 行为完全不变，依赖 `androidx.fragment.ktx` 已在）。**测试证据**：`./gradlew assembleDebug` BUILD SUCCESSFUL；`testDebugUnitTest` + `lintDebug` BUILD SUCCESSFUL；真机回归（vivo PD2329，Android）——点「读内置样本 Alice」已正常打开阅读界面，不再闪退。P0V-01/02 仍维持 🚧：闪退已解除，可继续按 `docs/P0V-02-真机验证清单.md` 跑旋转/后台/强杀 Locator 恢复三场景 + EPUB3/中文/FXL 格式覆盖。
 

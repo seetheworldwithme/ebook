@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,7 +40,8 @@ import org.readium.r2.shared.ExperimentalReadiumApi
  *
  * - [AndroidFragment] 托管 [ReaderFragment]（Compose↔Readium 桥接的核心）。
  * - VM 绑 Activity scope（与 ReaderFragment 的 activityViewModels 共享同一实例）。
- * - 顶/底控制条 overlay：返回 + 进度、字号±、日/夜/护眼主题、加/清高亮。
+ * - 顶/底控制条 overlay：返回 + 进度、字号±、日/夜/护眼主题、高亮计数/清。
+ *   高亮本身由「长按选中正文文字 → 系统 ActionMode「高亮」」触发（见 ReaderFragment），不在底栏。
  */
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
@@ -79,7 +79,6 @@ fun ReaderScreen(
             onLight = { viewModel.changeTheme(ReadiumTheme.LIGHT) },
             onDark = { viewModel.changeTheme(ReadiumTheme.DARK) },
             onSepia = { viewModel.changeTheme(ReadiumTheme.SEPIA) },
-            onAddHighlight = { viewModel.addTestHighlight() },
             onClearHighlights = { viewModel.clearHighlights() },
             highlightCount = decorations.size,
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -137,7 +136,6 @@ private fun ReaderBottomBar(
     onLight: () -> Unit,
     onDark: () -> Unit,
     onSepia: () -> Unit,
-    onAddHighlight: () -> Unit,
     onClearHighlights: () -> Unit,
     highlightCount: Int,
     modifier: Modifier = Modifier,
@@ -160,10 +158,7 @@ private fun ReaderBottomBar(
             OutlinedButton(onClick = onLight) { Text("日") }
             OutlinedButton(onClick = onSepia) { Text("黄") }
             OutlinedButton(onClick = onDark) { Text("夜") }
-            IconButton(onClick = onAddHighlight) {
-                Icon(Icons.Default.FormatColorFill, contentDescription = "加高亮")
-            }
-            Text("$highlightCount", style = MaterialTheme.typography.bodySmall)
+            Text("高亮 $highlightCount", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = onClearHighlights) { Text("清") }
         }
     }

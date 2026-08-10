@@ -1,7 +1,10 @@
 package com.xuziyue.ebook.reader
 
 import android.os.Bundle
+import android.view.ActionMode
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
@@ -43,6 +46,7 @@ class ReaderFragment : Fragment() {
                 initialLocator = state.initialLocator,
                 initialPreferences = state.preferences,
                 listener = viewModel,
+                configuration = navigatorConfiguration(),
             )
             else -> EpubNavigatorFragment.createDummyFactory()
         }
@@ -92,6 +96,7 @@ class ReaderFragment : Fragment() {
             initialLocator = state.initialLocator,
             initialPreferences = state.preferences,
             listener = viewModel,
+            configuration = navigatorConfiguration(),
         )
         childFragmentManager.commitNow {
             add(R.id.navigator_container, EpubNavigatorFragment::class.java, null, NAV_TAG)
@@ -122,6 +127,41 @@ class ReaderFragment : Fragment() {
         }
     }
 
+    // ===== 文本选择 → 加高亮（Phase 0 验证 Decoration 渲染）=====
+    // 长按选中正文文字 → 系统 ActionMode 菜单「高亮」→ currentSelection().locator（精确 DOM 文本范围）
+    // → addHighlight → applyDecorations 渲染。对齐 Readium test-app VisualReaderFragment。
+
+    private val selectionActionModeCallback = object : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+            menu.add(0, MENU_HIGHLIGHT_ID, 0, "高亮")
+            return true
+        }
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+            if (item.itemId == MENU_HIGHLIGHT_ID) {
+                lifecycleScope.launch {
+                    val selection = navigator?.currentSelection()
+                    if (selection != null) {
+                        viewModel.addHighlight(selection.locator)
+                        navigator?.clearSelection()
+                    }
+                    mode.finish()
+                }
+                return true
+            }
+            return false
+        }
+
+        override fun onDestroyActionMode(mode: ActionMode) {}
+    }
+
+    @OptIn(ExperimentalReadiumApi::class)
+    private fun navigatorConfiguration() = EpubNavigatorFragment.Configuration {
+        selectionActionModeCallback = this@ReaderFragment.selectionActionModeCallback
+    }
+
     override fun onStop() {
         super.onStop()
         // READ-08：进入后台强制保存最新 locator
@@ -131,5 +171,6 @@ class ReaderFragment : Fragment() {
     private companion object {
         const val NAV_TAG = "epub_navigator"
         const val DECORATION_GROUP = "highlights"
+        const val MENU_HIGHLIGHT_ID = 1
     }
 }

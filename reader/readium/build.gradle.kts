@@ -26,3 +26,10 @@ dependencies {
     // 提供真实 org.json 实现（同 :app，规避 android.jar 的 org.json stub）。
     testImplementation("org.json:json:20240303")
 }
+
+// 单元测试工作目录指向仓库根：本地样本集成测试（WanxiangzhiwangLocalSampleTest）用
+// 相对路径 samples/local/... 能正确解析。Gradle Test 任务默认 workingDir 是模块目录
+// reader/readium/，会导致相对路径解析失败、测试永远跳过。
+tasks.withType<Test>().configureEach {
+    workingDir = rootProject.projectDir
+}

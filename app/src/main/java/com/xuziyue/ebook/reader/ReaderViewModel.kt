@@ -66,6 +66,8 @@ class ReaderViewModel @Inject constructor(
     private var currentHash: String? = null
     private var latestLocator: Locator? = null
     private var persistJob: Job? = null
+    /** 高亮 id 序列（递增，避免快速连续加高亮时 id 冲突）。 */
+    private var highlightSeq = 0L
 
     /**
      * 打开指定 [contentHash] 的书。幂等：同 hash 不重复 open（旋转重建时不会重复打开）。
@@ -143,11 +145,12 @@ class ReaderViewModel @Inject constructor(
     }
 
     // ===== 高亮（Phase 0 验证 Decoration 渲染）=====
+    // locator 必须来自文本选择（selection.locator）——含精确 DOM 文本范围，Readium 才能渲染高亮。
+    // 页级 currentLocator 无文本范围、渲染不出（见 P0V-02 真机回归记录）。
 
-    fun addTestHighlight() {
-        val locator = latestLocator ?: return
+    fun addHighlight(locator: Locator) {
         val decoration = Decoration(
-            id = "hl-${System.nanoTime()}",
+            id = "hl-${highlightSeq++}",
             locator = locator,
             style = Decoration.Style.Highlight(tint = Color.YELLOW),
         )
