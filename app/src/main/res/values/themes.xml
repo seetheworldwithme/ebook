@@ -1,0 +1,4 @@
+<resources>
+    <!-- Compose 应用：manifest 启动主题用系统 NoActionBar，运行后由 Compose MaterialTheme 接管。 -->
+    <style name="Theme.EbookReader" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -1,0 +1,23 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+android {
+    namespace = "com.xuziyue.ebook.reader.readium"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 23
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    // 用 api 让 :app 传递访问 Readium；下一步 P0V-02 在此封装 Compose↔Fragment 桥接。
+    api(libs.bundles.readium)
+    api(libs.androidx.webkit)
+}

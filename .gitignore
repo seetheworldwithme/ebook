@@ -1,0 +1,25 @@
+# Gradle / build
+.gradle/
+build/
+*/build/
+**/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.cxx/
+
+# 本地配置（不入库，含 SDK 路径）
+local.properties
+
+# 本地版权样本 —— 绝不入库（CLAUDE.md 红线）
+samples/local/
+
+# OS
+.DS_Store
+
+# Kotlin
+*.kotlin_metadata
