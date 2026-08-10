@@ -23,7 +23,7 @@
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 0 | 0 |
 
-> 当前进度：0 / 42（Phase 0 收官：P0V-01/02/04/05 ✅，P0V-03 PDF 按既定决策推后 V1；MVP 前置验证全过，可进 Phase 1。详见文末变更记录）。
+> 当前进度：0 / 42（Phase 1 刀1 完成：Room 数据层 + 导入 IMP-01/03/04 + 进度闭环 READ-01/08 + 书库列表 LIB-01 雏形，单测+编译+lint 全绿；🚧 项待真机回归转 ✅。详见文末变更记录）。
 
 ---
 
@@ -47,17 +47,17 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| IMP-01 | ⬜ | 系统文档选择器导入单个 / 多个受支持文件（不申请「所有文件访问」） |
+| IMP-01 | 🚧 | 系统文档选择器导入单个 / 多个受支持文件（不申请「所有文件访问」）。刀1：SAF 导入 + Room 落库完成，待真机回归 |
 | IMP-02 | ⬜ | 接收 `ACTION_VIEW` / `ACTION_SEND` 打开的电子书 |
-| IMP-03 | ⬜ | 导入时复制到应用私有目录（删/移原文件后仍可读，失败不留半成品） |
-| IMP-04 | ⬜ | 提取标题、作者、封面、格式、文件大小、SHA-256 唯一哈希 |
+| IMP-03 | 🚧 | 导入时复制到应用私有目录（删/移原文件后仍可读，失败不留半成品）。刀1：BookFileImporter 原子复制+SHA-256 去重 + ImportBookUseCase 事务清理完成，待真机回归 |
+| IMP-04 | 🚧 | 提取标题、作者、封面、格式、文件大小、SHA-256 唯一哈希。刀1：ExtractPublicationMetadataUseCase（Readium metadata + cover）+ contentHash 唯一索引完成，待真机回归 |
 | IMP-05 | ⬜ | 展示导入进度 / 成功 / 可理解的失败原因 |
 
 ### 书库（LIB）
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| LIB-01 | ⬜ | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅） |
+| LIB-01 | 🚧 | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅）。刀1：最简书名列表（书名+作者/format+点击打开）已通；网格/封面/进度/排序留刀2 |
 | LIB-02 | ⬜ | 最近阅读、全部、已读完三个入口 |
 | LIB-03 | ⬜ | 按书名 / 作者搜索，按最近阅读 / 导入时间 / 书名排序 |
 | LIB-04 | ⬜ | 书籍详情页（元数据、进度、文件信息、批注数量、继续阅读） |
@@ -66,14 +66,14 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| READ-01 | ⬜ | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator） |
+| READ-01 | 🚧 | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator）。刀1：ReadingProgress(Room) 替代 LocatorStore，待真机回归 |
 | READ-02 | ⬜ | 目录、章节跳转、当前位置百分比、进度拖动 |
 | READ-03 | ⬜ | 点击区域、左右滑动、音量键翻页（音量键可关闭） |
 | READ-04 | ⬜ | 分页与纵向滚动两种模式 |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
 | READ-06 | ⬜ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成） |
 | READ-07 | ⬜ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用） |
-| READ-08 | ⬜ | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存） |
+| READ-08 | 🚧 | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository，待真机回归 |
 
 ### EPUB / TXT 排版（TYPE）
 
@@ -166,6 +166,8 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-10）：**Phase 1 刀1 完成：Room 数据层地基 + 导入 + 进度闭环 + bookId 寻址 + 书库列表雏形。单测+编译+lint 全绿，IMP-01/03/04、READ-01/08、LIB-01 标 🚧 待真机回归转 ✅。** 打通「导入 EPUB/TXT → Room 持久化 → 书库可见 → 阅读 → 杀进程不丢进度」闭环骨架。新增 11 文件 + 改 5 + 删 1（LocatorStore）。① **Room 数据层**（`:app/data/db/`）：`BookEntity`（PK=id，uniqueIndex=contentHash）+ `ReadingProgressEntity`（PK=bookId，ForeignKey CASCADE 删书连带删进度）+ `BookTypeConverters`（authors↔JSON、status↔name）+ `BookDatabase`(v1, exportSchema=true) + `BookDao`/`ReadingProgressDao` + `BookMappers`（Entity↔domain）。② **schema export**（红线 #6）：`app/build.gradle.kts` 加 `ksp { arg("room.schemaLocation","$projectDir/schemas"); arg("room.generateKotlin","true") }`，schema 落 `app/schemas/.../BookDatabase/1.json`（已生成确认）。③ **Repository**：`BookRepository`（observeBooks 排序 lastOpenedAt desc nulls last、getByContentHash 去重、markOpened）、`ReadingProgressRepository`（getLocator/save 走 PersistedLocator + totalProgression，clock 注入）。④ **导入事务**（红线 #4 不留半条记录）：`ExtractPublicationMetadataUseCase`（`:reader:readium`，复用 OpenBookUseCase/OpenTxtUseCase `allowUserInteraction=false`，读 `metadata`（title 空→文件名兜底、authors mapNotNull 去空）+ `publication.cover()`，finally close）+ `ImportBookUseCase`（Outcome 三态 Imported/AlreadyExists/Failed + bookIdOrNull 扩展；原子性矩阵：copyWithHash 失败自清→查重短路→extract 失败删书文件→封面失败降级 null→insert 失败回滚书文件+封面；format/mediaType 由扩展名派生不穿透 Readium）。⑤ **reader bookId 改造**：route `reader/{contentHash}`→`reader/{bookId}`；`ReaderViewModel` 注入 BookRepository/ReadingProgressRepository 替换 locatorStore，`openPublication` 从 Book 拿 filePath+contentHash（打开层仍按扩展名分流，P0V-05 论证非能力层），进度恢复 `progressRepository.getLocator` + `markOpened`，落盘 `progressRepository.save`（防抖 1.5s + flushLocator）；删 `LocatorStore`，保留 DataStore provider（刀2 TYPE 用）。⑥ **书库列表**（`MainActivity.LibraryScreen`）：observeBooks 书名列表（书名+作者/format）+ 点击打开 + 空提示 + 导入按钮（SAF）+ 读 Alice；最简，网格/封面/进度/搜索/排序留刀2。**DI**：新建 `DatabaseModule`（BookDatabase/Dao/Repository/ImportBookUseCase @Singleton），`ReaderModule` 加 ExtractPublicationMetadataUseCase provider、删 provideLocatorStore。**关键决策**：Entity 放 `:app/data/db` 不拆 `:core:database`（CLAUDE.md 不拆模块）；authors TypeConverter（domain 保持 List）；locatorJson 复用 `PersistedLocator.toJsonString`（含 schemaVersion）；ReadingProgress PK=bookId + CASCADE；单行 insert 无需 @Transaction（多行事务留刀3+批注）；DataStore→Room 数据迁移**不做**（私人项目测试数据可重建、schema v1 未稳定）。**测试**：`:app:testDebugUnitTest` **19 passed**（BookDaoTest 6：insert/getById/getByContentHash/contentHash 重复抛约束/observeAll 排序/touchOpened/status 往返；ReadingProgressDaoTest 3：upsert REPLACE 覆盖/get null/CASCADE；SchemaExportedTest 1：formatVersion+database.entities；+ 既有 ContentHash 4 + PersistedLocator 5）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL。合计 model 5 + readium 42 + app 19 = **66 单测全绿**。**踩坑**：① **Robolectric DefaultSdkPicker 失败**（compileSdk 36，Robolectric 4.14.1 最高 35）→ `app/src/test/resources/robolectric.properties` 固定 `sdk=34`（Room DAO 测 SQLite 行为与 SDK 无关）+ `testOptions.unitTests.isIncludeAndroidResources=true`；② **schema classpath 路径**：`sourceSets.test.resources.srcDir(schemas)` 把内容映射到 classpath 根，`SchemaExportedTest` 的 resource 路径要去 `schemas/` 前缀；③ **Room schema 结构**：entities 在 `database` 对象下非根（`root.getJSONObject("database").getJSONArray("entities")`）；④ **Readium metadata.title/name 是 String? 平台类型**（javap 报 getTitle():String 但 Kotlin 绑定可空）→ `m.title?.takeIf{}` + `mapNotNull{it.name}`。**migration 框架**：v1 无 migration；CI 跑 `SchemaExportedTest` 验 schema 导出；`MigrationTestHelper` 骨架 + androidTest assets srcDir 就位（需真机，CI 跳过，v2 加 migration 时复用）。**仅单测 + 编译 + lint，未真机回归**（阅读流程 ReaderViewModel/MainActivity 改动大，LocatorStore→Room 切换）——IMP-01/03/04、READ-01/08、LIB-01 维持 🚧，待徐先生真机连机验「导入 EPUB/TXT → 书库列表可见 → 打开阅读 → 翻页 → 杀进程/旋转 → 恢复进度」全链路后转 ✅。下一步：真机回归通过转 ✅ → 刀2（完整 LIB-01/03 + READ-02 目录 + READ-04 分页滚动 + TYPE-01/02 排版保位）。
 
 > 实现状态（2026-08-10）：**P0V-05 能力矩阵完成，转 ✅；Phase 0 收官，可进 Phase 1（MVP）。** 方案：建立引擎无关的能力矩阵模型，UI 据此 gating（红线 #2），能力来自打开后的 Readium `Publication` 而非扩展名。新增 3 文件 + 改 6 文件：① **`ReaderCapabilities` + `ReaderFormat`**（`:core:model`，纯 JVM data class，与 `Book` 同层）：`from(format, isSearchable)` 唯一能力逻辑入口（EPUB→全能力；PDF→浏览/搜索/书签，canHighlight/canAnnotate/canCopyShare/canTts=false 对应 issue #823）+ `forEpub()`/`forPdf()` 预定义工厂（spec 意图矩阵 + 单测 + V1 兜底）。② **`Publication.toReaderCapabilities()`**（`:reader:readium` 扩展）：用 `conformsTo(Publication.Profile.EPUB/PDF)` 探格式 + `publication.isSearchable` 探搜索（`Publication` 无 format 字段，conformsTo/isSearchable 均标 `@ExperimentalReadiumApi` 已 `@OptIn`，已用 javap 读 readium-shared-3.3.0 classes.jar 坐实 API）；Readium 知识内聚 readium 模块，`:app` 只调扩展。③ 接入：`ReaderViewModel` 加 `capabilities: StateFlow<ReaderCapabilities>`（初值 `forEpub()` 安全默认，`openPublication` onSuccess 里 `_capabilities.value = publication.toReaderCapabilities()`）；`ReaderScreen` collect 后传 `canHighlight` 给 `ReaderBottomBar`，底栏高亮计数/清除组包 `if (canHighlight)`；`ReaderFragment.onCreateActionMode` 按 `viewModel.capabilities.value.canHighlight` 门禁「高亮」菜单项。④ Gradle 接线：`core/model` 加 `testImplementation(libs.junit)`（原无 dependencies 块），`reader/readium` 加 `implementation(project(":core:model"))`。⑤ 产出 `docs/P0V-05-能力矩阵.md`（能力×格式矩阵表 + gating 规则表 + 关键设计说明）。**关键设计点**：能力来自 `Publication` 非扩展名（`Book.format` 当前是未填充死字段，不用）；TXT 经 `OpenTxtPublicationUseCase` 转 EPUB 后 conformsTo(EPUB)=true → 能力天然等同 EPUB，**能力层无需也不应按 `.txt` 扩展名单独算**；`ReaderViewModel.kt:94` 的 `.txt` 分流是**打开层**（TXT 必须先转 EPUB 才能喂 Readium，物理前置），非能力层，不动、不违反红线 #2（红线针对「按扩展名给用户展示按钮」，打开层对用户不可见）；PDF `forPdf()`=浏览/搜索/书签无批注，但 MVP 运行时永不产生（`pdfFactory=null`），V1 真开 PDF 走运行时 `toReaderCapabilities()` 以 `isSearchable` 实测、UI 只看运行时结果（design.md:130「未验证则隐藏」双重保证）。**模块决策**：`ReaderCapabilities` 放 `:core:model`，**未新建 `:core:reader-api`**（design.md:234 说属该模块，但当前不存在且同模块的 ReaderSession/ReaderLocation/ReaderPreferences 一个都没有；CLAUDE.md「不要随手拆模块」，为单类型开模块是 YAGNI；Phase 1 出现第二引擎时连四类型一起搬）。**测试**：`:core:model:testDebugUnitTest` **5 passed / 0 failed**（`ReaderCapabilitiesTest`：forEpub 全能力 / forPdf 浏览+搜索+书签无批注 / isSearchable 探针 EPUB&PDF 生效 / TXT 经 EPUB 推导==forEpub / EPUB 与 PDF 批注类严格不同防回归）；`:reader:readium:testDebugUnitTest` **42 passed / 0 failed**（P0V-04 基线全回归，加 `:core:model` 依赖无破坏）；`:app:testDebugUnitTest` **9 passed / 0 failed**（ContentHash+PersistedLocator 回归）；`:app:assembleDebug` + `:app:lintDebug` **BUILD SUCCESSFUL**（DI 闭环、gating 接入、APK 打包均过）。仅 2 个既有 warning（ArrowBack deprecated、`@ApplicationContext` KT-73255，P0V-04 已记录，非本次引入）。**仅单测 + 编译 + lint，未真机回归**（P0V-05 是模型+文档+gating 钩子，MVP 运行时只产生 EPUB 能力、canHighlight 恒 true，EPUB/TXT 路径行为无变化；gating 钩子在 V1 打开 PDF 时才生效）。**Phase 0 收官**：P0V-01/02/04/05 全 ✅，P0V-03 PDF 按既定决策（implementation-plan §3）推后 V1（非「未通过」，是 MVP 刻意不含 PDF），Phase 0 的 MVP 前置验证项全过，可进 Phase 1。
 

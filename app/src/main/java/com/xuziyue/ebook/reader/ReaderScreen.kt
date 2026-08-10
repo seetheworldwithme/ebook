@@ -46,15 +46,15 @@ import org.readium.r2.shared.ExperimentalReadiumApi
 @OptIn(ExperimentalReadiumApi::class)
 @Composable
 fun ReaderScreen(
-    contentHash: String,
+    bookId: String,
     onBack: () -> Unit,
 ) {
     // VM 绑 Activity scope，确保与 ReaderFragment 的 activityViewModels() 共享同一实例。
     val activity = LocalContext.current as ViewModelStoreOwner
     val viewModel: ReaderViewModel = hiltViewModel(viewModelStoreOwner = activity)
 
-    LaunchedEffect(contentHash) {
-        viewModel.openBook(contentHash)
+    LaunchedEffect(bookId) {
+        viewModel.openBook(bookId)
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

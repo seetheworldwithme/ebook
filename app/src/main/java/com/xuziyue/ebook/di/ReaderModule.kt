@@ -6,7 +6,7 @@ import androidx.datastore.dataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.xuziyue.ebook.data.BookFileImporter
-import com.xuziyue.ebook.data.LocatorStore
+import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
 import com.xuziyue.ebook.reader.readium.ReadiumFacade
@@ -41,6 +41,14 @@ object ReaderModule {
     @Singleton
     fun provideOpenBookUseCase(facade: ReadiumFacade): OpenBookUseCase =
         OpenBookUseCase(facade)
+
+    @Provides
+    @Singleton
+    fun provideExtractPublicationMetadataUseCase(
+        openBookUseCase: OpenBookUseCase,
+        openTxtUseCase: OpenTxtPublicationUseCase,
+    ): ExtractPublicationMetadataUseCase =
+        ExtractPublicationMetadataUseCase(openBookUseCase, openTxtUseCase)
 
     @Provides
     @Singleton
@@ -79,9 +87,4 @@ object ReaderModule {
     @Singleton
     fun provideBookFileImporter(@ApplicationContext context: Context): BookFileImporter =
         BookFileImporter(context)
-
-    @Provides
-    @Singleton
-    fun provideLocatorStore(dataStore: DataStore<Preferences>): LocatorStore =
-        LocatorStore(dataStore)
 }

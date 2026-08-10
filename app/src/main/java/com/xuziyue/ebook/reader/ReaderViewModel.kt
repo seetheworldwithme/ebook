@@ -5,7 +5,8 @@ import android.content.Intent
 import android.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.xuziyue.ebook.data.LocatorStore
+import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.model.ReaderCapabilities
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
@@ -34,7 +35,7 @@ import java.io.File
  *
  * 职责：
  * 1. 管理 [Publication][org.readium.r2.shared.publication.Publication] 生命周期（open / close / 进程重建重 open）。
- * 2. 协调 [Locator] 恢复——从 [LocatorStore] 读最近位置作 initialLocator，currentLocator 变化防抖落盘。
+ * 2. 协调 [Locator] 恢复——从 [ReadingProgressRepository]（Room）读最近位置作 initialLocator，currentLocator 变化防抖落盘。
  * 3. 持有排版偏好（[EpubPreferences]）与高亮（[Decoration]）StateFlow，供 Compose 控制条与 Fragment 订阅。
  * 4. 实现 [EpubNavigatorFragment.Listener]（外链交系统浏览器，红线 #4 + design.md §7）。
  *
@@ -49,7 +50,8 @@ class ReaderViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val openBookUseCase: OpenBookUseCase,
     private val openTxtUseCase: OpenTxtPublicationUseCase,
-    private val locatorStore: LocatorStore,
+    private val bookRepository: BookRepository,
+    private val progressRepository: ReadingProgressRepository,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -71,34 +73,36 @@ class ReaderViewModel @Inject constructor(
     private val _capabilities = MutableStateFlow(ReaderCapabilities.forEpub())
     val capabilities: StateFlow<ReaderCapabilities> = _capabilities.asStateFlow()
 
-    private var currentHash: String? = null
+    private var currentBookId: String? = null
     private var latestLocator: Locator? = null
     private var persistJob: Job? = null
     /** 高亮 id 序列（递增，避免快速连续加高亮时 id 冲突）。 */
     private var highlightSeq = 0L
 
     /**
-     * 打开指定 [contentHash] 的书。幂等：同 hash 不重复 open（旋转重建时不会重复打开）。
+     * 打开指定 [bookId] 的书。幂等：同 bookId 不重复 open（旋转重建时不会重复打开）。
      */
-    fun openBook(contentHash: String) {
-        if (contentHash == currentHash) return
+    fun openBook(bookId: String) {
+        if (bookId == currentBookId) return
         // 切换书：close 上一本（若有）
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
-        currentHash = contentHash
-        openPublication(contentHash)
+        currentBookId = bookId
+        openPublication(bookId)
     }
 
-    private fun openPublication(contentHash: String) {
+    private fun openPublication(bookId: String) {
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
 
-            val filePath = locatorStore.readFilePath(contentHash)
-                ?: File(context.filesDir, "books/$contentHash.epub").absolutePath
-            val file = File(filePath)
+            val book = bookRepository.getById(bookId) ?: run {
+                _uiState.value = ReaderUiState.Error("书籍不存在：$bookId")
+                return@launch
+            }
+            val file = File(book.filePath)
 
-            // 按扩展名分流：.txt → 转 EPUB 缓存后打开（P0V-04 方案 A）；其余 → 原 EPUB 路径
-            val result = if (filePath.endsWith(".txt", ignoreCase = true)) {
-                openTxtUseCase.open(file, contentHash = contentHash)
+            // 打开层按 filePath 扩展名分流（P0V-05 论证：打开层非能力层）；.txt 先转 EPUB 缓存再打开。
+            val result = if (book.filePath.endsWith(".txt", ignoreCase = true)) {
+                openTxtUseCase.open(file, contentHash = book.contentHash)
             } else {
                 openBookUseCase.open(file)
             }
@@ -107,7 +111,8 @@ class ReaderViewModel @Inject constructor(
                 .onSuccess { publication ->
                     // 能力来自打开后的 Publication（conformsTo + isSearchable），非扩展名（红线 #2）。
                     _capabilities.value = publication.toReaderCapabilities()
-                    val savedLocator = locatorStore.readLocator(contentHash)
+                    val savedLocator = progressRepository.getLocator(bookId) // Room 替代 LocatorStore
+                    bookRepository.markOpened(bookId) // lastOpenedAt + status=READING
                     val factory = EpubNavigatorFactory(publication)
                     _uiState.value = ReaderUiState.Ready(
                         publication = publication,
@@ -132,7 +137,7 @@ class ReaderViewModel @Inject constructor(
         persistJob?.cancel()
         persistJob = viewModelScope.launch {
             delay(PERSIST_DEBOUNCE_MS)
-            locatorStore.saveLocator(currentHash ?: return@launch, locator)
+            progressRepository.save(currentBookId ?: return@launch, locator)
         }
     }
 
@@ -140,8 +145,8 @@ class ReaderViewModel @Inject constructor(
     fun flushLocator() {
         persistJob?.cancel()
         val locator = latestLocator ?: return
-        val hash = currentHash ?: return
-        viewModelScope.launch { locatorStore.saveLocator(hash, locator) }
+        val bookId = currentBookId ?: return
+        viewModelScope.launch { progressRepository.save(bookId, locator) }
     }
 
     // ===== 排版偏好（实时生效 + 旋转保位）=====

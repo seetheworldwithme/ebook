@@ -7,6 +7,13 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// Room schema 导出（红线 #6）：编译时生成 app/schemas/.../BookDatabase/1.json，
+// 供 migration 测试读取；room.generateKotlin=true 生成 Kotlin DAO 实现。
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.generateKotlin", "true")
+}
+
 // 锁 androidx.lifecycle 全族到 2.10.0：避免被传递依赖（hilt-navigation-compose 1.4.0 等）拉到 2.11.0，
 // 后者要求 compileSdk 37 / AGP 9.1.0；本项目锁定 compileSdk 36 / AGP 9.0.0（与 Readium 3.3.0 一致）。
 configurations.configureEach {
@@ -55,6 +62,19 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // Room schema JSON 读取：androidTest（migration 仪器测试 assets）+ test（SchemaExportedTest resources）。
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+        getByName("test").resources.srcDir("$projectDir/schemas")
+    }
+
+    // Robolectric（DAO 单测）需要 Android 资源。
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -92,4 +112,14 @@ dependencies {
     // 提供真实 org.json 实现：Android unit test 默认用 android.jar 的 org.json stub（方法抛 not mocked），
     // 而 PersistedLocator / Locator 的序列化测试依赖真实 JSONObject 行为。
     testImplementation("org.json:json:20240303")
+    // Room DAO 单测：Robolectric 提供 JVM 上的真实 SQLite，让 in-memory Room 进 testDebugUnitTest（CI 友好）。
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.room.testing)
+
+    // Room migration 仪器测试（需真机，CI 跳过；注记说明）。
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
