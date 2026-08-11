@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import android.view.ActionMode
+import android.widget.Toast
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
@@ -203,12 +204,13 @@ class ReaderFragment : Fragment() {
         override fun onDestroyActionMode(mode: ActionMode) {}
     }
 
-    /** 复制选中文字到系统剪贴板（READ-07；空选区不操作）。 */
+    /** 复制选中文字到系统剪贴板（READ-07；空选区不操作；Toast 反馈，部分 ROM 不弹系统复制提示）。 */
     private suspend fun copySelection() {
         val text = navigator?.currentSelection()?.locator?.text?.highlight
         if (text.isNullOrBlank()) return
         val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("ebook", text))
+        Toast.makeText(requireContext(), "已复制", Toast.LENGTH_SHORT).show()
     }
 
     /** 系统分享选中文字（READ-07；空选区不操作；交系统 chooser 选择目标）。 */

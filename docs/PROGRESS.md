@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 12 | 2 |
+| P0（MVP 必做） | 28 | 14 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 12 | 2 |
+| 合计 | 42 | 14 | 0 |
 
-> 当前进度：12 ✅ / 2 🚧（第一切片 11 项 + READ-06 真机转 ✅；READ-07 收尾（复制/分享/调色板）+ DATA-01 导出仅单测+编译+lint 全绿，**未真机回归 → 🚧**，连机验过再转 ✅）。详见文末变更记录。
+> 当前进度：14 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 收尾 + DATA-01 真机回归（vivo V2329A）全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -72,7 +72,7 @@
 | READ-04 | ✅ | 分页与纵向滚动两种模式。刀3：ReaderScrollMode 接 EpubPreferences.scroll + 排版面板「翻页方式」。真机：切模式实时生效 + 双向保位（3%↔3%）+ 滚动连续/分页翻页 + 高亮跨模式存活 + 杀重启保模式。FXL 上 scroll 无效（Readium 行为，已知边界留 V1） |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
 | READ-06 | ✅ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成）。刀 READ-06/07：BookmarkEntity 表 + toggle 去重（href+progression ε）+ 顶栏 toggle + BookmarkSheet。真机（vivo V2329A）全过：加/取消/去重/列表/跳回（进度回 3%）/isBookmarked 跟位置响应式/杀重启书签+进度不丢 |
-| READ-07 | 🚧 | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用）。刀 READ-06/07：高亮落 Annotation 表 + DB 驱动渲染（根治红线 #9 内存态）+ AnnotationSheet + 笔记编辑（高亮/笔记部分真机验过）；刀 READ-07 收尾：选中菜单「复制」(ClipboardManager)/「分享」(ACTION_SEND+chooser，canCopyShare 首次消费 gating) + 四色调色板（updateColor 全链路 DAO→Repo→VM→AnnotationSheet，DB 驱动回流自动重渲染）**仅单测+编译+lint，未真机回归 → 🚧 待真机转 ✅** |
+| READ-07 | ✅ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用）。刀 READ-06/07：高亮落 Annotation 表 + DB 驱动渲染（根治红线 #9 内存态）+ AnnotationSheet + 笔记编辑；刀 READ-07 收尾：选中菜单「复制」(ClipboardManager，Toast 反馈)/「分享」(ACTION_SEND+chooser，canCopyShare 首次消费 gating) + 四色调色板（updateColor 全链路，DB 驱动回流自动重渲染）。**真机回归（vivo V2329A）全过**：ActionMode 三项菜单 + 分享弹系统 chooser + 复制 Toast「已复制」(setPrimaryClip 执行) + 四色改色 DB PINK + 正文高亮黄→粉 + force-stop 重开颜色保留 |
 | READ-08 | ✅ | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository；真机回归翻页后强杀恢复通过 |
 
 ### EPUB / TXT 排版（TYPE）
@@ -88,7 +88,7 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| DATA-01 | 🚧 | 导出单本书书签 / 高亮 / 笔记为 Markdown / JSON（含 schema 版本 + Locator + 时间戳）。刀 DATA-01：ExportBookDataUseCase（4 DAO 聚合 + kotlinx @Serializable DTO + MD/JSON 双序列化 + SAF CreateDocument 临时文件原子写）；入口在笔记 sheet 标题行「导出」→ 格式弹窗 → SAF；schemaVersion=1（独立于 PersistedLocator 内层）；**仅单测+编译+lint 全绿，未真机回归 → 🚧 待真机转 ✅** |
+| DATA-01 | ✅ | 导出单本书书签 / 高亮 / 笔记为 Markdown / JSON（含 schema 版本 + Locator + 时间戳）。刀 DATA-01：ExportBookDataUseCase（4 DAO 聚合 + kotlinx @Serializable DTO + MD/JSON 双序列化 + SAF CreateDocument 临时文件原子写）；入口在笔记 sheet 标题行「导出」→ 格式弹窗 → SAF；schemaVersion=1（独立于 PersistedLocator 内层）。**真机回归（vivo V2329A）全过**：MD/JSON 各导出 pull 验内容——MD 含书名/进度/书签/高亮/笔记/时间戳人可读；JSON schemaVersion=1 + book.id + 嵌套 locator(含内层 schemaVersion) + 全时间戳 |
 | DATA-02 | ⬜ | 本地数据库自动迁移（升级不丢书库 / 进度 / 批注，有迁移测试） |
 
 ### 设置、无障碍与隐私（SET）
@@ -166,6 +166,13 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-07 收尾 + DATA-01 导出 🚧→✅。P0 14 ✅ / 0 🚧。** 设备真实数据（万相之王：书签 1 + 高亮「鬼哭」+ 笔记 goodpassage，3%）全链路 adb 自动化 + 图像分析 + sqlite3 直查 + 手指（选中）混合验证。
+> **DATA-01 导出**：笔记 sheet「导出」→ 格式弹窗（Markdown/JSON）→ SAF CreateDocument（默认文件名「万相之王.md/json」，publication.title sanitize 正确）→ 保存「下载」→ adb pull 验内容：**MD**（`# 《万相之王》批注` + 格式 TXT + 进度 3% + 书签 1 + 高亮「鬼哭」+ 笔记 goodpassage + 时间本地格式化 + 颜色中文「黄」，人可读）；**JSON**（顶层 `schemaVersion=1` + exportedAt + `book.id`/title/format + progress/bookmarks/annotations 各带 `locator` 嵌套 PersistedLocator 含**内层 schemaVersion=1** + 完整 Readium Locator href/`text.highlight=鬼哭` + 全 createdAt/updatedAt 时间戳 + color YELLOW）——DATA-01 验收口径（稳定 schema 版本 + 书籍 ID + Locator + 时间戳；Markdown 人可读）全满足。
+> **READ-07 调色板**：点粉色 → sqlite3 直查 DB `color=PINK`（updateColor 落盘）+ 图像分析正文「鬼哭」高亮黄→粉（decorations 派生回流 applyDecorations 重注入）+ force-stop 后 DB 仍 PINK（落盘不丢）+ 重开高亮仍粉（DB 驱动渲染跨重启存活）。
+> **READ-07 复制 / 分享（手指选中）**：徐先生手指长按选中（adb 驱动不了 Readium WebView 手势，与 P0V-02 / 刀3 / READ-06 一致）→ ActionMode 浮层含「高亮 / 复制 / 分享」三项（canCopyShare gating 生效，图像分析确认）→ **分享** `topResumedActivity=com.android.intentresolver.ChooserActivityLauncher`（系统分享面板：微信 / LocalSend / 今日头条…）→ **复制** Toast「已复制」（setPrimaryClip 执行确认）。
+> **真机发现 + 修复 1 个 UX 缺陷**：复制原本无任何反馈（vivo 等不弹系统复制 Toast，用户不知是否成功）→ `copySelection` 加 app Toast「已复制」。
+> **adb 边界**：复制剪贴板内容客观验证受 Android 10+ 限制（`service call`/`dumpsys clipboard` 读系统剪贴板被拒，只允许前台 app / 输入法读）——改用「Toast 在 setPrimaryClip 之后、text 非空才到」作为执行证据，证明写入的是选中文字。logcat 全程干净（导出 / 改色 / 复制 / 分享无 FATAL / Room / SQLite 异常）。
 
 > 实现状态（2026-08-11）：**DATA-01 导出代码完成 🚧 待真机转 ✅：单本书书签+高亮+笔记(+进度) → Markdown/JSON。仅单测+编译+lint 全绿，未真机回归（纠正：不应在未真机回归前置 ✅，已回退 🚧，对齐项目「真机回归过才 ✅」惯例）。** 批注能导出才真正「属于自己」，趁字段口径在 READ-07 稳定后衔接。
 > **数据层（新建 `data/export/` 包）**：① `ExportBookDataUseCase`（注入 4 DAO 跨表聚合原始持久化态——Repository observe 丢原始 locatorJson 返回反序列化 Locator，导出需原文+全时间戳，故直接用 DAO，类 ImportBookUseCase 跨数据源；`snapshotForBook` suspend 非响应式与 observe 同过滤，纯新增 @Query 不改 schema 无 migration）；② `ExportDtos`（@Serializable DTO，顶层 `EXPORT_SCHEMA_VERSION=1` **独立于** PersistedLocator 内层 Locator schema 版本；locator 字段 `JsonElement` 经 `Json.parseToJsonElement(rawLocatorJson)` 原样保留 PersistedLocator 包装含其嵌套 schemaVersion；color 存 HighlightColor.name 字符串避免跨 core/model 模块 serialization plugin 依赖）；③ `ExportSerializers`（toJson = kotlinx `prettyPrint + encodeDefaults` / toMarkdown = buildString 手拼人可读，时间戳本地格式化）。
