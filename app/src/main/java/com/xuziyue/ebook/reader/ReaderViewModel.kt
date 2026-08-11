@@ -2,10 +2,11 @@ package com.xuziyue.ebook.reader
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.model.ReaderCapabilities
@@ -20,6 +21,7 @@ import com.xuziyue.ebook.reader.readium.toReaderCapabilities
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -29,6 +31,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -60,7 +65,7 @@ import java.io.File
  * ReaderFragment 通过 activityViewModels() 共享同一实例。bookId 由 [openBook] 传入——进程重建后 Navigation
  * 恢复 route，ReaderScreen 重建调 openBook 重 open。
  */
-@OptIn(ExperimentalReadiumApi::class)
+@OptIn(ExperimentalReadiumApi::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -69,6 +74,8 @@ class ReaderViewModel @Inject constructor(
     private val bookRepository: BookRepository,
     private val progressRepository: ReadingProgressRepository,
     private val typographyRepository: ReaderTypographyRepository,
+    private val bookmarkRepository: BookmarkRepository,
+    private val annotationRepository: AnnotationRepository,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -92,9 +99,32 @@ class ReaderViewModel @Inject constructor(
         combine(typography, _systemDark) { t, dark -> t.toEpubPreferences(dark) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default.toEpubPreferences(isSystemDark = false))
 
-    /** 高亮 Decoration（Phase 0 内存验证渲染；批注先落盘留 Phase 1 READ-07）。 */
-    private val _decorations = MutableStateFlow<List<Decoration>>(emptyList())
-    val decorations: StateFlow<List<Decoration>> = _decorations.asStateFlow()
+    /** 当前打开的书 id（Flow 源，供 bookmarks/annotations flatMapLatest 切书时重订阅）。 */
+    private val _activeBookId = MutableStateFlow<String?>(null)
+    /** 最近 Locator（Flow 源，供 isBookmarked 响应式判定；[latestLocator] 取值直读 .value）。 */
+    private val _latestLocator = MutableStateFlow<Locator?>(null)
+
+    /** 当前书书签列表（READ-06，DB 驱动回流）。 */
+    val bookmarks: StateFlow<List<BookmarkItem>> = _activeBookId
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else bookmarkRepository.observe(id) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** 当前书活跃批注列表（READ-07，DB 驱动回流；红线 #9：渲染跑在落盘之后）。 */
+    val annotations: StateFlow<List<AnnotationItem>> = _activeBookId
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else annotationRepository.observe(id) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** 高亮 Decoration：由 [annotations] 派生（id=批注 id，定位/颜色取自 DB）。打开书时已存高亮自动重现。 */
+    val decorations: StateFlow<List<Decoration>> = annotations
+        .map { list ->
+            list.map { Decoration(id = it.id, locator = it.locator, style = Decoration.Style.Highlight(tint = it.color.toTintColor())) }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** 当前位置是否已加书签（TopBar toggle 图标用；与 toggleBookmark 同一套 locator 等价判定）。 */
+    val isBookmarked: StateFlow<Boolean> = combine(bookmarks, _latestLocator) { list, loc ->
+        if (loc == null) false else list.any { sameBookmarkPosition(it.locator, loc) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** 全书进度展示（派生自 Locator.totalProgression，红线 #1）。 */
     private val _progressText = MutableStateFlow("0%")
@@ -121,11 +151,9 @@ class ReaderViewModel @Inject constructor(
     private val _canGoBack = MutableStateFlow(false)
     val canGoBack: StateFlow<Boolean> = _canGoBack.asStateFlow()
 
-    private var currentBookId: String? = null
-    private var latestLocator: Locator? = null
+    private val currentBookId: String? get() = _activeBookId.value
+    private val latestLocator: Locator? get() = _latestLocator.value
     private var persistJob: Job? = null
-    /** 高亮 id 序列（递增，避免快速连续加高亮时 id 冲突）。 */
-    private var highlightSeq = 0L
 
     /**
      * 打开指定 [bookId] 的书。幂等：同 bookId 不重复 open（旋转重建时不会重复打开）。
@@ -134,7 +162,7 @@ class ReaderViewModel @Inject constructor(
         if (bookId == currentBookId) return
         // 切换书：close 上一本（若有）
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
-        currentBookId = bookId
+        _activeBookId.value = bookId // 驱动 bookmarks/annotations 重新订阅新书
         openPublication(bookId)
     }
 
@@ -186,7 +214,7 @@ class ReaderViewModel @Inject constructor(
 
     /** 由 ReaderFragment 订阅 navigator.currentLocator 后转发到此。 */
     fun onLocatorUpdated(locator: Locator) {
-        latestLocator = locator
+        _latestLocator.value = locator
         val prog = locator.locations.totalProgression ?: 0.0
         _progressText.value = "${(prog * 100).toInt()}%"
         _progression.value = prog
@@ -259,21 +287,77 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch { typographyRepository.update(transform) }
     }
 
-    // ===== 高亮（Phase 0 验证 Decoration 渲染）=====
+    // ===== 高亮 / 笔记（READ-07，DB 驱动：先落盘 → observe 回流 → applyDecorations 渲染，红线 #9）=====
     // locator 必须来自文本选择（selection.locator）——含精确 DOM 文本范围，Readium 才能渲染高亮。
-    // 页级 currentLocator 无文本范围、渲染不出（见 P0V-02 真机回归记录）。
+    // 页级 currentLocator 无文本范围、渲染不出（见 P0V-02 真机回归记录）。selectedText 在 Repository 取 locator.text.highlight。
 
+    /** 新增高亮（先 Room 落盘；observe 回流自动驱动 applyDecorations，不乐观更新内存）。 */
     fun addHighlight(locator: Locator) {
-        val decoration = Decoration(
-            id = "hl-${highlightSeq++}",
-            locator = locator,
-            style = Decoration.Style.Highlight(tint = Color.YELLOW),
-        )
-        _decorations.value = _decorations.value + decoration
+        val bookId = currentBookId ?: return
+        viewModelScope.launch { annotationRepository.add(bookId, locator) }
     }
 
+    /** 软删除全部高亮（"清空"；observe 回流清 UI）。 */
     fun clearHighlights() {
-        _decorations.value = emptyList()
+        val bookId = currentBookId ?: return
+        viewModelScope.launch { annotationRepository.softDeleteAllForBook(bookId) }
+    }
+
+    /** 软删除单条高亮。 */
+    fun removeAnnotation(id: String) {
+        viewModelScope.launch { annotationRepository.softDelete(id) }
+    }
+
+    /** 编辑笔记（覆盖 + 刷新 updatedAt；observe 回流更新列表）。 */
+    fun updateAnnotationNote(id: String, note: String?) {
+        viewModelScope.launch { annotationRepository.updateNote(id, note) }
+    }
+
+    /** 跳到批注位置（先记当前位置到 history，再发指令）。 */
+    fun jumpToAnnotation(item: AnnotationItem) = jumpToLocator(item.locator)
+
+    // ===== 书签（READ-06：添加 / 取消 / 列表 / 跳回，重复位置不重复生成）=====
+
+    /** 在当前位置切换书签（Repository 按 locator 等价去重，重复位置 toggle off）。 */
+    fun toggleBookmark() {
+        val bookId = currentBookId ?: return
+        val locator = latestLocator ?: return
+        val excerpt = locator.text.after?.take(EXCERPT_MAX)?.trim()?.takeIf { it.isNotBlank() }
+        viewModelScope.launch { bookmarkRepository.toggleBookmark(bookId, locator, excerpt) }
+    }
+
+    /** 删除指定书签。 */
+    fun removeBookmark(id: String) {
+        viewModelScope.launch { bookmarkRepository.delete(id) }
+    }
+
+    /** 删除当前书全部书签（书签面板"清空"）。 */
+    fun removeBookmarksForCurrent() {
+        val bookId = currentBookId ?: return
+        viewModelScope.launch { bookmarkRepository.deleteAllForBook(bookId) }
+    }
+
+    /** 跳到书签位置（先记当前位置到 history，再发指令）。 */
+    fun jumpToBookmark(item: BookmarkItem) = jumpToLocator(item.locator)
+
+    /**
+     * 跳到任意 [Locator]（书签 / 批注共用）：先 push 当前位置到 history（可返回），再发指令。
+     */
+    fun jumpToLocator(locator: Locator) {
+        pushHistory()
+        _navCommands.trySend(ReaderNavCommand.GoToLocator(locator))
+    }
+
+    /** locator 等价判定（书签去重 / isBookmarked 共用，对齐 BookmarkRepository.PROGRESSION_EPS）。 */
+    private fun sameBookmarkPosition(a: Locator, b: Locator): Boolean {
+        if (a.href != b.href) return false
+        val ap = a.locations.totalProgression
+        val bp = b.locations.totalProgression
+        return when {
+            ap == null && bp == null -> true
+            ap != null && bp != null -> kotlin.math.abs(ap - bp) < PROGRESSION_EPS
+            else -> false
+        }
     }
 
     // ===== 目录 / 进度跳转（READ-02）=====
@@ -325,6 +409,10 @@ class ReaderViewModel @Inject constructor(
         const val PERSIST_DEBOUNCE_MS = 1500L
         /** 跳转 history 最大深度（防内存膨胀）。 */
         const val HISTORY_MAX = 20
+        /** 书签摘录最大长度（页级上下文，截 Locator.text.after）。 */
+        const val EXCERPT_MAX = 80
+        /** 书签 locator 等价判定的 progression 容差（与 BookmarkRepository 一致）。 */
+        const val PROGRESSION_EPS = 1e-3
         // 排版数值范围（UI 滑块同此；null = 引擎默认，coerce 仅约束显式设置的值）。
         const val FONT_SIZE_MIN = 0.5
         const val FONT_SIZE_MAX = 5.0

@@ -15,18 +15,26 @@ class SchemaExportedTest {
 
     @Test
     fun `schema 1 json 已导出且含 books 与 reading_progress 实体`() {
-        // sourceSets.test.resources.srcDir(schemas) 把 schemas 内容映射到 classpath 根，
-        // 故路径去掉 schemas/ 前缀。
-        val path = "com.xuziyue.ebook.data.db.BookDatabase/1.json"
+        val names = tableNames("com.xuziyue.ebook.data.db.BookDatabase/1.json")
+        // v1 基线（迁移起点，必须随仓库提交供 migration 测试读取）。
+        assertTrue("缺少 books 表", names.contains("books"))
+        assertTrue("缺少 reading_progress 表", names.contains("reading_progress"))
+    }
+
+    @Test
+    fun `schema 2 json 已导出且含 bookmarks 与 annotations 实体`() {
+        val names = tableNames("com.xuziyue.ebook.data.db.BookDatabase/2.json")
+        assertEquals(4, names.size) // books + reading_progress + bookmarks + annotations
+        assertTrue("缺少 bookmarks 表（READ-06）", names.contains("bookmarks"))
+        assertTrue("缺少 annotations 表（READ-07）", names.contains("annotations"))
+    }
+
+    private fun tableNames(path: String): List<String> {
+        // sourceSets.test.resources.srcDir(schemas) 把 schemas 内容映射到 classpath 根，故路径去掉 schemas/ 前缀。
         val json = javaClass.classLoader!!.getResourceAsStream(path)
             ?.bufferedReader()?.use { it.readText() }
             ?: error("未找到 classpath:$path；确认 ksp room.schemaLocation 配置且已先跑 assembleDebug 生成 schema")
-        val root = JSONObject(json)
-        assertEquals(1, root.getInt("formatVersion"))
-        val entities = root.getJSONObject("database").getJSONArray("entities")
-        assertEquals(2, entities.length())
-        val names = (0 until entities.length()).map { entities.getJSONObject(it).getString("tableName") }
-        assertTrue("缺少 books 表", names.contains("books"))
-        assertTrue("缺少 reading_progress 表", names.contains("reading_progress"))
+        val entities = JSONObject(json).getJSONObject("database").getJSONArray("entities")
+        return (0 until entities.length()).map { entities.getJSONObject(it).getString("tableName") }
     }
 }

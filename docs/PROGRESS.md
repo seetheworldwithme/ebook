@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 11 | 0 |
+| P0（MVP 必做） | 28 | 12 | 1 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 11 | 0 |
+| 合计 | 42 | 12 | 1 |
 
-> 当前进度：11 ✅ / 0 🚧（第一切片 11 项全真机转 ✅：刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 + 刀2-B/C READ-02/LIB-01/03 + 刀3 READ-04）。**第一切片（自用最小闭环）功能完成。** 详见文末变更记录。
+> 当前进度：12 ✅ / 1 🚧（第一切片 11 项全真机转 ✅ + READ-06 书签真机转 ✅；READ-07 高亮笔记落盘持久化部分真机验过，仅剩复制/分享 + 调色板，故 🚧）。详见文末变更记录。
 
 ---
 
@@ -71,8 +71,8 @@
 | READ-03 | ⬜ | 点击区域、左右滑动、音量键翻页（音量键可关闭） |
 | READ-04 | ✅ | 分页与纵向滚动两种模式。刀3：ReaderScrollMode 接 EpubPreferences.scroll + 排版面板「翻页方式」。真机：切模式实时生效 + 双向保位（3%↔3%）+ 滚动连续/分页翻页 + 高亮跨模式存活 + 杀重启保模式。FXL 上 scroll 无效（Readium 行为，已知边界留 V1） |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
-| READ-06 | ⬜ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成） |
-| READ-07 | ⬜ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用） |
+| READ-06 | ✅ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成）。刀 READ-06/07：BookmarkEntity 表 + toggle 去重（href+progression ε）+ 顶栏 toggle + BookmarkSheet。真机（vivo V2329A）全过：加/取消/去重/列表/跳回（进度回 3%）/isBookmarked 跟位置响应式/杀重启书签+进度不丢 |
+| READ-07 | 🚧 | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用）。刀 READ-06/07：高亮落 Annotation 表 + DB 驱动渲染（根治红线 #9 内存态）+ AnnotationSheet + 笔记编辑；**复制/系统分享 + 调色板留下一刀**，故 🚧 |
 | READ-08 | ✅ | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository；真机回归翻页后强杀恢复通过 |
 
 ### EPUB / TXT 排版（TYPE）
@@ -166,6 +166,26 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-06 书签 转 ✅；READ-07 高亮笔记落盘 持久化部分真机验过（维持 🚧，仅剩复制/分享 + 调色板）。** 覆盖设备上**真实 v1 库**（books/progress 各 3 行，user_version=1）覆盖安装 v2：
+> **① v1→v2 迁移保数据（REL-03）**：覆盖安装后启动，`user_version 1→2`、books/reading_progress 各 3 行不丢、bookmarks/annotations 表建好、无崩溃——`MIGRATION_1_2` 真实迁移成功（比单测更强：真实 v1 数据 + 真实 SQLite）。
+> **② READ-06 书签全功能**：顶栏 toggle「加书签↔取消书签」+ 底栏「书签 N」计数；**加→DB 落盘 1 行；同位置再点→toggle off，DB 物理删回 0**（「重复位置不重复生成」去重真机验证）；BookmarkSheet 列表（excerpt 空时「无摘录」兜底 + relativeTime「刚刚/11分钟前」）；**点书签跳回→进度从第5章(0%)回到 3%（位置A）+ isBookmarked 重新 true**（响应式跟位置切换，徐先生跳到第5章时顶栏正确变「加书签」未加态）；force-stop 杀进程重开→书签 1 + 进度恢复 3%（持久化跨重启）。
+> **③ READ-07 高亮落盘 + DB 驱动渲染（根治红线 #9）**：徐先生手指长按选中「鬼哭」→系统菜单「高亮」→DB annotations 落盘 `selectedText=鬼哭 / color=YELLOW / deletedAt=null`（**selectedText 取自 locator.text.highlight 坐实**）；底栏「笔记 1」；**force-stop 杀进程重开→DB 仍在（1|鬼哭|YELLOW）+ 底栏「笔记 1」+ 正文「鬼哭」黄底重新渲染**（徐先生肉眼确认）——DB 驱动 decorations 派生让高亮跨重启存活，根治了 Phase 0 内存态重启即丢的违规（红线 #9）。
+> **④ 笔记编辑**：AnnotationSheet→编辑笔记→AlertDialog 输入→保存→DB `note=goodpassage` + sheet 显示「笔记：goodpassage」预览（updateNote 链路 + relativeTime「12分钟前」）。
+> **logcat 干净**：全程无 FATAL/Room/Decoration/SQLite 异常（迁移、CASCADE、软删、Decoration 重新注入均静默正常）。
+> **adb 边界**：阅读器 UI 控制（顶栏 toggle / 底栏 sheet 入口 / sheet 内点击 / 进度跳转）+ DB sqlite3 直查 + logcat 全程 adb 自动化；唯「长按选中文字加高亮」必须手指（Readium WebView 手势 + 系统 ActionMode 浮层，adb 驱动不了，与 P0V-02/刀3 记录一致），由徐先生手指完成。设备测试残留：万相之王有一条书签（第1章 3% 位置）+ 一条高亮（第52章「鬼哭」+ 笔记 goodpassage），属自用真实标注，保留。
+> **测试证据**：`:app:testDebugUnitTest` 84 passed + `:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（编译/lint 详见上一条「代码完成」注记）+ 真机 adb 全链路 + sqlite3 直查 + logcat 干净。**READ-07 维持 🚧**：复制 / 系统分享（canCopyShare）+ 高亮调色板（字段已建 HighlightColor 枚举，UI 暂单黄）推后下一刀，届时一并转 ✅。
+
+> 实现状态（2026-08-11）：**刀 READ-06/07 代码完成：书签（READ-06 全做完）+ 高亮笔记落盘（READ-07 持久化闭环已做，复制/系统分享 + 调色板留下一刀）均 🚧 待真机回归转 ✅。代码 + 单测 + 迁移测试 + 编译 + lint 全绿，未真机回归。** 两件事共用「Locator 派生数据」Room 表，合并一刀摊销共享地基（DAO/Repository/迁移/UI 范式同构）。
+> **根治红线 #9（批注先落盘再呈现）**：Phase 0 高亮是纯内存态（`_decorations` + `highlightSeq` 计数 id），本刀改成 **DB 驱动渲染**——`decorations` StateFlow 由 `annotations`（Room observe 回流）派生，打开书时已存高亮自动重现；`addHighlight` 先 `annotationRepository.add`（Room 事务）再回流驱动 `applyDecorations`，不让内存态跑在数据库前面。
+> **数据层（照搬 ReadingProgressEntity/Dao/Repository 范式）**：① `:core:model` 加 `HighlightColor{YELLOW,GREEN,BLUE,PINK}` 枚举（默认 YELLOW）；② `BookmarkEntity`(id/bookId FK CASCADE/locatorJson/excerpt/createdAt，无软删——物理删) + `AnnotationEntity`(id/bookId/locatorJson/selectedText/note/color/createdAt/updatedAt/deletedAt 软删) + `@Index(bookId)`；③ `BookTypeConverters` 加 HighlightColor↔name 转换对（兜底 Default）；④ `BookDatabase` v1→**v2** + `MIGRATION_1_2`（CREATE TABLE/INDEX 的 SQL **逐字取自 Room 生成的 2.json**，保证列序/约束名一致）+ DI `.addMigrations`（绝不 fallbackToDestructive）；⑤ `BookmarkDao`/`AnnotationDao`（observe 过滤 deletedAt IS NULL / softDelete / updateNote）+ `BookmarkRepository`/`AnnotationRepository`（注入 `clock`+`idGenerator` 便于单测，Locator 经 `PersistedLocator` 包装）。
+> **READ-06 去重口径**：「重复位置不生成重复书签」在 Repository 层按 locator 等价判定——`href` 相同 + `totalProgression` 差 < 1e-3 视为同位置（toggle off），不靠 DB unique 索引（locator JSON 字符串精确相等无法覆盖微小 progression 差）。`isBookmarked` 顶栏图标态复用同一判定。
+> **READ-07 selectedText 来源（实测 Readium 3.3.0 jar 坐实）**：`Selection` 类只有 `locator`+`rect` 无 `.text`；选中文本 = `selection.locator.text.highlight`（Locator.Text = before/highlight/after）→ `addHighlight(locator)` 签名不变，selectedText 在 Repository 内取，ReaderFragment 选中回调零改动。
+> **ViewModel（DB 驱动）**：`_activeBookId` flatMapLatest 切书重订阅 `bookmarks`/`annotations`；删 `_decorations`/`highlightSeq`；新增 `toggleBookmark`/`removeBookmark`/`removeBookmarksForCurrent`/`jumpToBookmark`/`addHighlight`/`removeAnnotation`/`updateAnnotationNote`/`clearHighlights`(软删全部)/`jumpToAnnotation`/`jumpToLocator`（书签+批注跳转共用，push history 后发 `GoToLocator` 指令）。`ReaderNavCommand` 加 `GoToLocator`，ReaderFragment when 加分支。
+> **UI（仿 TocSheet 范式）**：顶栏加书签 toggle IconButton（实心/空心，`canBookmark` gating——**首次消费 canBookmark**，红线 #2）；底栏「高亮 N/清」改为「书签 N」+「笔记 N」两个 TextButton 入口（canBookmark/canHighlight 分别 gating）；`BookmarkSheet`（摘录+相对时间+跳回+删除+清空）、`AnnotationSheet`（色点+选中文字+笔记预览+跳回+编辑+删除+清空）、`NoteEditDialog`（AlertDialog+OutlinedTextField，保存/删除/取消）。颜色 `HighlightColor` 枚举存储但 UI 本刀只出黄色（调色板留后）。
+> **测试（30 个新/改，全绿）**：BookmarkDaoTest 6 / AnnotationDaoTest 6 / BookmarkRepositoryTest 8（toggle 去重全分支：首次/同位置撤销/不同 href/容差内/容差外/locator 往返/delete/损坏跳过）/ AnnotationRepositoryTest 7（selectedText 取自 locator.text.highlight/locator 往返/updateNote/softDelete/清空/color 往返/损坏跳过）/ **BookDatabaseMigrationTest 1**（文件级金标准：裸 SQLiteDatabase 造 v1 库+种数据 → Room 用 MIGRATION_1_2 打开触发迁移+**schema 校验** → 旧数据未丢 + 新表可写读 + CASCADE 生效；设备级 MigrationTestHelper 等价测试随 connectedAndroidTest 延后）/ SchemaExportedTest 改（v1 保留 + v2.json 4 表断言）。踩坑：① 测试 helper 误把 progression 塞进 `locations.progression`（代码读的是 `totalProgression`，Readium 里是两个不同字段）→ 改塞 `totalProgression`；② 迁移测试首次失败 `Migration didn't properly handle: books`——手建 v1 库漏了 `books.contentHash` 唯一索引，补 `index_books_contentHash` 后通过（Room 迁移后校验全部表含索引）。
+> **顺带修 1 个既有 lint 问题（非本刀引入）**：`TxtEncodingDetector.kt:93` 注释里混进一个字面 BOM 字符（P0V-04 `fec480f` 引入），触发 `ByteOrderMark` lint error 卡住 `lintDebug` 门槛 → 换成文本转义 `﻿`（语义不变），git status 确认该文件非本刀改动。
+> **测试证据**：`:app:testDebugUnitTest` **84 passed**（0 fail 0 error 0 skip，含本刀新增 28 + 改 SchemaExportedTest 2）+ `:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（仅既有 @ApplicationContext KT-73255 warning）。**仅单测 + 编译 + lint，未真机回归**——READ-06/07 持久化逻辑经迁移测试强校验，待徐先生真机连机验「① 选中文字→高亮→杀重启→高亮仍在 ② 加书签→列表→跳回→同位置再点取消 ③ 笔记编辑保存 ④ 顶栏书签 toggle 实心/空心态」后转 ✅。READ-07 复制/分享 + 调色板推后下一刀。
 
 > 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-02 / LIB-01 / LIB-03 / READ-04 转 ✅，第一切片（IMP-01/03/04 + LIB-01/03 + READ-01/02/04/08 + TYPE-01/02）11 项功能全闭环。**
 > **READ-04（刀3）**：切滚动/分页（排版面板「翻页方式」按钮组）实时生效；**双向保位**（分页→滚动→分页，进度始终 3%——Readium scroll 切换框架内建保 Locator，字节码验证属实）；滚动模式连续滚动 + 分页模式左右翻页（手指验，adb swipe 驱动不了 Readium WebView 手势）；高亮跨模式存活（滚动模式加高亮→切分页→高亮仍在）；杀重启 scroll 持久化（DataStore）+ 进度恢复。

@@ -31,7 +31,7 @@ fun flattenTableOfContents(links: List<Link>, depth: Int = 0): List<TocItem> {
  * Reader 跳转指令（VM 发出 → [ReaderFragment] 执行 navigator 调用）。
  *
  * navigator 与 publication 分居 Fragment / VM，用单向事件流解耦（沿用 preferences / decorations 范式）。
- * READ-02：目录跳转 / 进度拖动 / 返回上一阅读位置。
+ * READ-02：目录跳转 / 进度拖动 / 返回上一阅读位置；READ-06/07：书签 / 批注跳回原文。
  */
 sealed interface ReaderNavCommand {
     /** 目录章节跳转：navigator.go(link)。 */
@@ -42,4 +42,7 @@ sealed interface ReaderNavCommand {
 
     /** 返回上一阅读位置（跳转前已 push 到 history 栈的 Locator）。 */
     data class GoBack(val locator: Locator) : ReaderNavCommand
+
+    /** 跳到任意 Locator（书签 / 批注跳回原文；跳转前 VM 已 push 当前位置到 history）。 */
+    data class GoToLocator(val locator: Locator) : ReaderNavCommand
 }

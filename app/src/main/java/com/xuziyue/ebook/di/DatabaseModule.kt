@@ -2,12 +2,17 @@ package com.xuziyue.ebook.di
 
 import android.content.Context
 import androidx.room.Room
+import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.BookFileImporter
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookDatabase
+import com.xuziyue.ebook.data.db.MIGRATION_1_2
+import com.xuziyue.ebook.data.db.AnnotationDao
+import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.ReadingProgressDao
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
 import dagger.Module
@@ -29,13 +34,21 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideBookDatabase(@ApplicationContext context: Context): BookDatabase =
-        Room.databaseBuilder(context, BookDatabase::class.java, BookDatabase.DB_NAME).build()
+        Room.databaseBuilder(context, BookDatabase::class.java, BookDatabase.DB_NAME)
+            .addMigrations(MIGRATION_1_2) // v1→v2：books/progress + bookmarks/annotations（红线 #6，不破坏性重建）
+            .build()
 
     @Provides
     fun provideBookDao(db: BookDatabase): BookDao = db.bookDao()
 
     @Provides
     fun provideReadingProgressDao(db: BookDatabase): ReadingProgressDao = db.readingProgressDao()
+
+    @Provides
+    fun provideBookmarkDao(db: BookDatabase): BookmarkDao = db.bookmarkDao()
+
+    @Provides
+    fun provideAnnotationDao(db: BookDatabase): AnnotationDao = db.annotationDao()
 
     @Provides
     @Singleton
@@ -45,6 +58,15 @@ object DatabaseModule {
     @Singleton
     fun provideReadingProgressRepository(dao: ReadingProgressDao): ReadingProgressRepository =
         ReadingProgressRepository(dao)
+
+    @Provides
+    @Singleton
+    fun provideBookmarkRepository(dao: BookmarkDao): BookmarkRepository = BookmarkRepository(dao)
+
+    @Provides
+    @Singleton
+    fun provideAnnotationRepository(dao: AnnotationDao): AnnotationRepository =
+        AnnotationRepository(dao)
 
     @Provides
     @Singleton

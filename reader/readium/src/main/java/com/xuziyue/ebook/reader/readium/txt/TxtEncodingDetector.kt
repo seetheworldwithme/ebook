@@ -90,7 +90,7 @@ object TxtEncodingDetector {
      * 去除 BOM 并按指定 [charset] 解码为正文 String。
      *
      * BOM 是元数据，不进正文（Java 标准 UTF-8 / UTF-16BE/LE 解码器不会自动吞掉 BOM，
-     * 会解码出 `﻿`，故这里手动按 [charset] 对应的 BOM 剥离前缀字节）。
+     * 会解码出 `\uFEFF`，故这里手动按 [charset] 对应的 BOM 剥离前缀字节）。
      */
     fun decode(bytes: ByteArray, charset: Charset): String {
         val bom = bomOf(charset)

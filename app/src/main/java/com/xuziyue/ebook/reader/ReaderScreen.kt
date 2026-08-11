@@ -1,5 +1,6 @@
 package com.xuziyue.ebook.reader
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -15,28 +16,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -60,6 +72,7 @@ import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
+import com.xuziyue.ebook.ui.relativeTime
 import org.readium.r2.shared.publication.Link
 
 /**
@@ -100,22 +113,31 @@ fun ReaderScreen(
     val decorations by viewModel.decorations.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val typography by viewModel.typography.collectAsStateWithLifecycle()
+    val isBookmarked by viewModel.isBookmarked.collectAsStateWithLifecycle()
+    val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val annotations by viewModel.annotations.collectAsStateWithLifecycle()
 
     var showTypography by remember { mutableStateOf(false) }
     var showToc by remember { mutableStateOf(false) }
     var showProgress by remember { mutableStateOf(false) }
+    var showBookmarks by remember { mutableStateOf(false) }
+    var showAnnotations by remember { mutableStateOf(false) }
+    var editingAnnotation by remember { mutableStateOf<AnnotationItem?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
         AndroidFragment<ReaderFragment>(modifier = Modifier.fillMaxSize())
 
-        // 顶部控制条（READ-02：目录 / 返回上一位置 / 进度入口）
+        // 顶部控制条（READ-02：目录 / 返回上一位置 / 进度入口；READ-06：书签 toggle）
         ReaderTopBar(
             progressText = progressText,
             canGoBack = canGoBack,
+            isBookmarked = isBookmarked,
+            canBookmark = capabilities.canBookmark,
             onBack = onBack,
             onOpenToc = { showToc = true },
             onGoBack = { viewModel.goBack() },
+            onToggleBookmark = { viewModel.toggleBookmark() },
             onOpenProgress = { showProgress = true },
             modifier = Modifier.align(Alignment.TopCenter),
         )
@@ -125,8 +147,11 @@ fun ReaderScreen(
             onFontDecrease = { viewModel.changeFontSize(-0.1) },
             onFontIncrease = { viewModel.changeFontSize(0.1) },
             onOpenTypography = { showTypography = true },
-            onClearHighlights = { viewModel.clearHighlights() },
-            highlightCount = decorations.size,
+            onOpenBookmarks = { showBookmarks = true },
+            onOpenAnnotations = { showAnnotations = true },
+            bookmarkCount = bookmarks.size,
+            annotationCount = annotations.size,
+            canBookmark = capabilities.canBookmark,
             canHighlight = capabilities.canHighlight,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -165,6 +190,46 @@ fun ReaderScreen(
             )
         }
 
+        // 书签面板（READ-06：列表 + 跳回 + 删除）
+        if (showBookmarks) {
+            BookmarkSheet(
+                items = bookmarks,
+                onJump = { viewModel.jumpToBookmark(it); showBookmarks = false },
+                onDelete = { viewModel.removeBookmark(it.id) },
+                onClearAll = { viewModel.removeBookmarksForCurrent() },
+                onDismiss = { showBookmarks = false },
+            )
+        }
+
+        // 批注面板（READ-07：高亮列表 + 跳回 + 笔记编辑 + 删除 + 清空）
+        if (showAnnotations) {
+            AnnotationSheet(
+                items = annotations,
+                onJump = { viewModel.jumpToAnnotation(it); showAnnotations = false },
+                onEdit = { editingAnnotation = it },
+                onDelete = { viewModel.removeAnnotation(it.id) },
+                onClearAll = { viewModel.clearHighlights(); showAnnotations = false },
+                onDismiss = { showAnnotations = false },
+            )
+        }
+
+        // 笔记编辑弹窗（READ-07：编辑 / 清空笔记）
+        editingAnnotation?.let { item ->
+            NoteEditDialog(
+                initialNote = item.note,
+                selectedText = item.selectedText,
+                onConfirm = { note ->
+                    viewModel.updateAnnotationNote(item.id, note)
+                    editingAnnotation = null
+                },
+                onDelete = {
+                    viewModel.removeAnnotation(item.id)
+                    editingAnnotation = null
+                },
+                onDismiss = { editingAnnotation = null },
+            )
+        }
+
         // Loading 遮罩（打开 Publication 中 / 进程重建重 open 中）
         if (uiState is ReaderUiState.Loading) {
             Box(
@@ -195,9 +260,12 @@ fun ReaderScreen(
 private fun ReaderTopBar(
     progressText: String,
     canGoBack: Boolean,
+    isBookmarked: Boolean,
+    canBookmark: Boolean,
     onBack: () -> Unit,
     onOpenToc: () -> Unit,
     onGoBack: () -> Unit,
+    onToggleBookmark: () -> Unit,
     onOpenProgress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -226,8 +294,18 @@ private fun ReaderTopBar(
                     }
                 }
             }
-            TextButton(onClick = onOpenProgress) {
-                Text("进度 $progressText", style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // READ-06：当前位置加 / 取消书签（canBookmark gating 红线 #2；已加=实心，未加=空心）。
+                IconButton(onClick = onToggleBookmark, enabled = canBookmark) {
+                    Icon(
+                        if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                        contentDescription = if (isBookmarked) "取消书签" else "加书签",
+                        tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                TextButton(onClick = onOpenProgress) {
+                    Text("进度 $progressText", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
@@ -238,8 +316,11 @@ private fun ReaderBottomBar(
     onFontDecrease: () -> Unit,
     onFontIncrease: () -> Unit,
     onOpenTypography: () -> Unit,
-    onClearHighlights: () -> Unit,
-    highlightCount: Int,
+    onOpenBookmarks: () -> Unit,
+    onOpenAnnotations: () -> Unit,
+    bookmarkCount: Int,
+    annotationCount: Int,
+    canBookmark: Boolean,
     canHighlight: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -262,10 +343,17 @@ private fun ReaderBottomBar(
             IconButton(onClick = onOpenTypography) {
                 Icon(Icons.Default.Tune, contentDescription = "排版")
             }
-            // 能力矩阵 gating（红线 #2）：canHighlight=false 时隐藏高亮计数与清除（PDF V1 生效）。
+            // READ-06：书签列表入口（canBookmark gating 红线 #2）。
+            if (canBookmark) {
+                TextButton(onClick = onOpenBookmarks) {
+                    Text("书签 $bookmarkCount", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            // READ-07：高亮 / 笔记列表入口（canHighlight gating 红线 #2；PDF V1 生效时隐藏）。
             if (canHighlight) {
-                Text("高亮 $highlightCount", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = onClearHighlights) { Text("清") }
+                TextButton(onClick = onOpenAnnotations) {
+                    Text("笔记 $annotationCount", style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }
@@ -547,4 +635,210 @@ private fun <T> OptionGroup(
             }
         }
     }
+}
+
+/**
+ * 书签面板（READ-06）。
+ *
+ * 列表项：摘录（无则"无摘录"）+ 相对时间；点击跳回原文并关面板；右侧删除。
+ * 顶部「清空」一次清掉当前书全部书签（Repository deleteAllForBook，回流自动更新计数）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BookmarkSheet(
+    items: List<BookmarkItem>,
+    onJump: (BookmarkItem) -> Unit,
+    onDelete: (BookmarkItem) -> Unit,
+    onClearAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val now = System.currentTimeMillis()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("书签", style = MaterialTheme.typography.titleMedium)
+            if (items.isNotEmpty()) {
+                TextButton(onClick = onClearAll) { Text("清空") }
+            }
+        }
+        if (items.isEmpty()) {
+            Text(
+                "本书没有书签",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+                items(items, key = { it.id }) { bookmark ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJump(bookmark) }
+                            .padding(start = 24.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                bookmark.excerpt?.takeIf { it.isNotBlank() } ?: "无摘录",
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                relativeTime(bookmark.createdAt, now),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        IconButton(onClick = { onDelete(bookmark) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "删除书签")
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(start = 24.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 批注 / 高亮面板（READ-07）。
+ *
+ * 列表项：色点 + 选中文字（最多 2 行）+ 笔记预览 + 相对时间；点击跳回原文；右侧编辑 / 删除。
+ * 顶部「清空」软删当前书全部批注（Repository softDeleteAllForBook，回流清 UI）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AnnotationSheet(
+    items: List<AnnotationItem>,
+    onJump: (AnnotationItem) -> Unit,
+    onEdit: (AnnotationItem) -> Unit,
+    onDelete: (AnnotationItem) -> Unit,
+    onClearAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val now = System.currentTimeMillis()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("笔记 / 高亮", style = MaterialTheme.typography.titleMedium)
+            if (items.isNotEmpty()) {
+                TextButton(onClick = onClearAll) { Text("清空") }
+            }
+        }
+        if (items.isEmpty()) {
+            Text(
+                "没有高亮 / 笔记（长按正文选中文字后选「高亮」）",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+                items(items, key = { it.id }) { annotation ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJump(annotation) }
+                            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 色点（高亮颜色）
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .background(annotation.color.toComposeColor(), CircleShape),
+                        )
+                        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                            Text(
+                                annotation.selectedText.ifBlank { "（空选区）" },
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            annotation.note?.takeIf { it.isNotBlank() }?.let { note ->
+                                Text(
+                                    "笔记：$note",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                            Text(
+                                relativeTime(annotation.createdAt, now),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        IconButton(onClick = { onEdit(annotation) }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "编辑笔记")
+                        }
+                        IconButton(onClick = { onDelete(annotation) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "删除高亮")
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(start = 24.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 笔记编辑弹窗（READ-07）。
+ *
+ * 顶部展示选中文字作上下文；[OutlinedTextField] 多行编辑笔记。
+ * 「保存」→ onConfirm（空串转 null）；「删除」→ onDelete（软删）；「取消」→ onDismiss。
+ */
+@Composable
+private fun NoteEditDialog(
+    initialNote: String?,
+    selectedText: String,
+    onConfirm: (String?) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var note by remember { mutableStateOf(initialNote ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑笔记") },
+        text = {
+            Column {
+                Text(
+                    selectedText.ifBlank { "（空选区）" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = { Text("写点笔记…") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(note.ifBlank { null }) }) { Text("保存") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDelete) { Text("删除") }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        },
+    )
 }

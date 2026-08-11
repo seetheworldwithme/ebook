@@ -137,6 +137,7 @@ class ReaderFragment : Fragment() {
                                 target.go(locator, animated = false)
                             }
                             is ReaderNavCommand.GoBack -> target.go(cmd.locator, animated = false)
+                            is ReaderNavCommand.GoToLocator -> target.go(cmd.locator, animated = false)
                         }
                     }
                 }
@@ -144,9 +145,10 @@ class ReaderFragment : Fragment() {
         }
     }
 
-    // ===== 文本选择 → 加高亮（Phase 0 验证 Decoration 渲染）=====
-    // 长按选中正文文字 → 系统 ActionMode 菜单「高亮」→ currentSelection().locator（精确 DOM 文本范围）
-    // → addHighlight → applyDecorations 渲染。对齐 Readium test-app VisualReaderFragment。
+    // ===== 文本选择 → 加高亮（READ-07：先 Room 落盘 → observe 回流 → applyDecorations 渲染）=====
+    // 长按选中正文文字 → 系统 ActionMode 菜单「高亮」→ currentSelection().locator（精确 DOM 文本范围，
+    // 同步携带 Locator.text.highlight 作为批注 selectedText）→ addHighlight → Repository 落盘 →
+    // decorations 派生回流 → applyDecorations 渲染。对齐 Readium test-app VisualReaderFragment。
 
     private val selectionActionModeCallback = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
