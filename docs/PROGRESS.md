@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 7 | 3 |
+| P0（MVP 必做） | 28 | 11 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 0 | 0 |
+| 合计 | 42 | 11 | 0 |
 
-> 当前进度：7 ✅ / 3 🚧（刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 真机回归转 ✅；刀2-B/C READ-02 + LIB-01/03 代码完成、单测 106 + 编译 + lint 全绿、🚧 待真机转 ✅）。详见文末变更记录。
+> 当前进度：11 ✅ / 0 🚧（第一切片 11 项全真机转 ✅：刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 + 刀2-B/C READ-02/LIB-01/03 + 刀3 READ-04）。**第一切片（自用最小闭环）功能完成。** 详见文末变更记录。
 
 ---
 
@@ -57,9 +57,9 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| LIB-01 | 🚧 | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅）。刀2-C：完整列表（默认）+ 网格切换 + Coil 封面 + 进度条(LEFT JOIN progression) + 最近阅读相对时间；刀1 列表雏形已真机验，刀2-C 完整版待真机 |
+| LIB-01 | ✅ | 网格/列表展示封面、书名、作者、进度、最近阅读时间。刀2-C：完整列表 + 网格切换 + Coil 封面 + 进度条(LEFT JOIN) + 相对时间。真机：列表/封面/进度/相对时间 + 网格 2 列切换 全过 |
 | LIB-02 | ⬜ | 最近阅读、全部、已读完三个入口 |
-| LIB-03 | 🚧 | 按书名 / 作者搜索，按最近阅读 / 导入时间 / 书名排序。刀2-C：DAO LIKE 搜索（忽略大小写 + 中文直匹配）+ 排序 DropdownMenu（内存 sortItems 纯函数）；单测 + 编译 + lint 绿，待真机 |
+| LIB-03 | ✅ | 按书名/作者搜索，按最近阅读/导入时间/书名排序。真机：LIKE 搜索（"Alice"→只剩 Alice）+ 3 种排序（书名升序 Alice→万→山 / 导入时间 / 最近阅读）全过 |
 | LIB-04 | ⬜ | 书籍详情页（元数据、进度、文件信息、批注数量、继续阅读） |
 
 ### 阅读器通用能力（READ）
@@ -67,9 +67,9 @@
 | ID | 状态 | 需求 |
 | --- | --- | --- |
 | READ-01 | ✅ | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator）。刀1：ReadingProgress(Room) 替代 LocatorStore；真机回归强杀+冷启 16%→16% 恢复通过 |
-| READ-02 | 🚧 | 目录、章节跳转、当前位置百分比、进度拖动。刀2-B：目录 sheet（publication.tableOfContents 扁平化 + depth 缩进）+ 点进度展开 Slider 浮层（locateProgression → go）+ history 返回上一位置；单测 + 编译 + lint 绿，待真机 |
+| READ-02 | ✅ | 目录、章节跳转、当前位置百分比、进度拖动。真机：目录 sheet 章节跳转 + 返回上一位置（按钮出现/消失 + 正文回退）+ 进度 ProgressSheet ◄►微调（0→5→3%）全过。修复顶栏 status bar 触摸 bug（见变更记录） |
 | READ-03 | ⬜ | 点击区域、左右滑动、音量键翻页（音量键可关闭） |
-| READ-04 | ⬜ | 分页与纵向滚动两种模式 |
+| READ-04 | ✅ | 分页与纵向滚动两种模式。刀3：ReaderScrollMode 接 EpubPreferences.scroll + 排版面板「翻页方式」。真机：切模式实时生效 + 双向保位（3%↔3%）+ 滚动连续/分页翻页 + 高亮跨模式存活 + 杀重启保模式。FXL 上 scroll 无效（Readium 行为，已知边界留 V1） |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
 | READ-06 | ⬜ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成） |
 | READ-07 | ⬜ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用） |
@@ -166,6 +166,22 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-02 / LIB-01 / LIB-03 / READ-04 转 ✅，第一切片（IMP-01/03/04 + LIB-01/03 + READ-01/02/04/08 + TYPE-01/02）11 项功能全闭环。**
+> **READ-04（刀3）**：切滚动/分页（排版面板「翻页方式」按钮组）实时生效；**双向保位**（分页→滚动→分页，进度始终 3%——Readium scroll 切换框架内建保 Locator，字节码验证属实）；滚动模式连续滚动 + 分页模式左右翻页（手指验，adb swipe 驱动不了 Readium WebView 手势）；高亮跨模式存活（滚动模式加高亮→切分页→高亮仍在）；杀重启 scroll 持久化（DataStore）+ 进度恢复。
+> **READ-02（刀2-B）**：目录 sheet 章节列表 + 点章节跳转（canGoBack 按钮出现）+ 返回上一位置（按钮消失 + 正文回退）+ 进度 ProgressSheet ◄►微调（0→5→3%）。
+> **LIB-01/03（刀2-C）**：列表（封面占位/书名/作者/进度/相对时间）+ 网格切换（2 列窄卡）+ 搜索过滤（"Alice"→只剩 Alice）+ 3 种排序（书名升序 Alice→万→山 / 导入时间 / 最近阅读）。
+> **修复 1 个真 bug（顶栏 status bar 触摸拦截）**：edge-to-edge 下 `ReaderTopBar` 未加 `statusBarsPadding`，顶栏按钮上半进入 status bar 触摸拦截区——目录/进度/返回按钮 adb tap 上半无效（目录 IconButton 较大、tap 下部勉强可点；进度 TextButton 较窄、几乎整个在拦截区、tap 完全打不开 ProgressSheet）。修复：`ReaderTopBar` 加 `Modifier.statusBarsPadding()`（按钮下移 114px = status bar 高度，完全可点）、`ReaderBottomBar` 加 `navigationBarsPadding()`（对称；vivo 手势导航 inset≈0 无位移，但底栏本就可点）。修复后进度按钮中心 tap 正常展开 sheet。**属刀2-B 引入顶栏的 inset 遗漏，刀2-B 当时仅单测+编译未真机，本次真机首验抓到**——再次印证「未真机不算完成」。
+> **READ-01/08 回归**：force-stop 强杀冷启重开 → 进度 3% 恢复、crash 缓冲空。
+> **测试证据**：110 单测全绿（ReaderScreen inset 修复不影响单测）+ `:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL；真机 16 张截图留证 + logcat 无 FATAL/OOM/ANR。adb 自动化覆盖书库/目录/进度/切模式/保位/杀重启；scroll 滚动 + 分页翻页 + 高亮由徐先生手指验（adb 驱动不了 Readium WebView 手势，与 P0V-02 记录一致）。
+> **第一切片（自用最小闭环）功能完成**：导入 EPUB/TXT → 书库（列表/网格/搜索/排序）→ 阅读（恢复位置/目录/进度拖动/分页滚动/排版保位/高亮/自动保存）→ 杀重启不丢。下一刀进第一切片之后的 P0（READ-03/05/06/07、TYPE-03/04、DATA-01/02、SET-01~05、IMP-02/05、LIB-02/04 等）。
+
+> 实现状态（2026-08-11）：**刀3 READ-04 代码完成：分页 / 纵向滚动两种模式，🚧 待真机转 ✅。第一切片（IMP-01/03/04 + LIB-01/03 + READ-01/02/04/08 + TYPE-01/02）最后一块补齐。代码 + 单测 + 编译 + lint 全绿，未真机回归。**
+> **方案**：把 Readium `EpubPreferences.scroll`（javap 坐实 `getScroll():Boolean`，true=纵向滚动 / null·false=分页）接到已验证的 ReaderTheme/ReaderTextAlign 管线——新增 `enum ReaderScrollMode { PAGINATED, SCROLL }`（:core:model）+ `ReaderTypography.scroll` 字段（null=分页=引擎默认，不强制持久化避免漂移）→ `toEpubPreferences` 映射（PAGINATED→false / SCROLL→true）→ `ReaderTypographyRepository` `KEY_SCROLL`（enum name 存取 + runCatching 防御改名）→ `ReaderViewModel.setScrollMode` → 排版面板「翻页方式」OptionGroup（徐先生选，复用泛型 OptionGroup，selected = typography.scroll ?: PAGINATED）。**单向数据流复用全套，零新机制**。
+> **关键：切模式保 Locator 是 Readium 框架内建，ReaderFragment 不改**——Plan 代理反编译 3.3.0 字节码坐实：`scroll` 变化触发 `Event.InvalidateViewPager` → `invalidateResourcePager` 先抓 `currentLocator` → `resetResourcePager` 重建 → 自动 `Navigator.go(locator)` 回位；现有 `preferences.collect { submitPreferences }` 管线自动触发，**无需补 go()**。保位精度=资源内 progression 级（满足 READ-04「保持语义位置」口径）。columnCount 在 scroll=true 时自动 ineffective，不需手动设 1；TXT（转 EPUB）自动生效；Decorations 跨模式存活（pager 重建后重新注入 JS）。
+> **已知边界（FXL）**：Readium `overflow` 对非 reflowable（FXL 固定版式，如 cole 样本）强制 `scroll=false`，切滚动无效但不崩。**决策（徐先生拍板）MVP 不做能力 gating**（FXL 非目标场景，网文/小说均 reflowable）；真正的 FXL 能力矩阵细化（`ReaderFormat` 拆 REFLOWABLE_EPUB / FXL_EPUB）留 V1 统一做——现在加 `supportsScrollMode` 布尔是半截子补丁、V1 仍要重构。
+> **测试**：`:core:model` **13**（+ReaderTypography copy scroll 1）/ `:reader:readium` **42**（回归）/ `:app` **55**（+TypographyMappings scroll 映射 1 + Repository scroll 往返 2）= **110 单测全绿**（0 fail 0 error 0 skip）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（仅既有 @ApplicationContext KT-73255 warning，非本次引入）。
+> **待真机验证（🚧→✅ 条件）**：① reflowable EPUB/TXT 切 滚动↔分页 实时生效 ② **切模式后位置保持**（progression 级，READ-04 核心）③ 滚动模式下加高亮 → 切回分页 → 高亮仍在（Decoration 跨模式存活）④ 开滚动 → 杀进程 → 重开 → 仍滚动 + 恢复位置（DataStore + initialPreferences）⑤ TXT（万相之王）切滚动正常（TXT→EPUB 链路自动生效）⑥ scroll + 夜间主题组合不互相干扰 ⑦ cole(FXL) 切滚动无效但不崩（已知边界）。**仅单测 + 编译 + lint，未真机回归**——READ-04 维持 🚧。
 
 > 实现状态（2026-08-11）：**刀2-B/C 代码完成：READ-02（目录+进度拖动）+ LIB-01 完整书库 + LIB-03 搜索排序，三项 🚧 待真机转 ✅。代码 + 单测 + 编译 + lint 全绿，未真机回归。**
 > **刀2-B（READ-02）**：① **跳转指令流**——`ReaderNavCommand`（GoToLink/GoToProgression/GoBack sealed）+ VM `Channel(BUFFERED).receiveAsFlow()`，ReaderFragment `bindNavigatorObservers` 加 collect 执行（沿用 preferences/decorations「VM 出事件 → Fragment 执行」范式，navigator 与 publication 分居 Fragment/VM 解耦）。② **目录**——`publication.tableOfContents` 经 `flattenTableOfContents`（递归 children → depth）扁平化成 `TocItem`，TocSheet 按 depth 缩进，点击 `navigator.go(link)`。③ **进度拖动**——`publication.locateProgression(progress)`（suspend 扩展，LocatorServiceKt，javap 验证）→ `navigator.go(locator)`；ProgressSheet（点顶栏「进度 N%」展开——徐先生选的浮层交互）Slider 本地 state 跟手松手跳转 + ◄ ► 微调 ±1%；`progression` StateFlow 派生自 Locator.totalProgression。④ **返回上一位置**——Navigator 无 history（goForward/goBackward 是翻页），VM 自管 `ArrayDeque<Locator>` jumpHistory（深度封顶 20），jumpToLink/jumpToProgression 前 push latestLocator、goBack pop；`canGoBack` gating 顶栏「返回」按钮可见。

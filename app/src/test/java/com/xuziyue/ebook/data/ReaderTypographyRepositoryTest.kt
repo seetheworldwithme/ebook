@@ -1,6 +1,7 @@
 package com.xuziyue.ebook.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import kotlinx.coroutines.flow.first
@@ -37,6 +38,7 @@ class ReaderTypographyRepositoryTest {
         assertNull(t.lineHeight)
         assertNull(t.textAlign)
         assertNull(t.pageMargins)
+        assertNull(t.scroll) // READ-04：默认 null（分页）
     }
 
     @Test
@@ -57,6 +59,24 @@ class ReaderTypographyRepositoryTest {
         val t = repo.observe().first()
         assertEquals(ReaderTextAlign.JUSTIFY, t.textAlign)
         assertEquals(ReaderTheme.DARK, t.theme)
+    }
+
+    @Test
+    fun `update 写入 scroll 翻页方式并持久化`() = runBlocking {
+        repo.update { it.copy(scroll = ReaderScrollMode.SCROLL) }
+
+        val t = repo.observe().first()
+        assertEquals(ReaderScrollMode.SCROLL, t.scroll)
+        // 写 scroll 不应让默认 theme 漂移
+        assertEquals(ReaderTheme.SYSTEM, t.theme)
+    }
+
+    @Test
+    fun `update 设 scroll 为 null 移除字段（恢复分页默认）`() = runBlocking {
+        repo.update { it.copy(scroll = ReaderScrollMode.SCROLL) }
+        repo.update { it.copy(scroll = null) }
+
+        assertNull(repo.observe().first().scroll)
     }
 
     @Test

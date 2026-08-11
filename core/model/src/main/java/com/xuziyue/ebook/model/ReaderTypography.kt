@@ -21,6 +21,19 @@ enum class ReaderTheme { LIGHT, SEPIA, DARK, SYSTEM }
 enum class ReaderTextAlign { START, JUSTIFY }
 
 /**
+ * 引擎无关的阅读翻页方式（design.md §4.3 READ-04）。
+ *
+ * - [PAGINATED]：分页模式（Readium `EpubPreferences.scroll = false`，引擎默认）。
+ * - [SCROLL]：纵向连续滚动（`scroll = true`）。
+ *
+ * FXL（固定版式）EPUB 上 [SCROLL] 无效——Readium 对非 reflowable 强制 scroll=false；
+ * MVP 不做能力 gating（FXL 非目标场景），详见 PROGRESS.md READ-04 注记。
+ *
+ * name 用作持久化 key，不可随意改名（会破坏已落盘偏好）。
+ */
+enum class ReaderScrollMode { PAGINATED, SCROLL }
+
+/**
  * 引擎无关的阅读排版偏好（design.md §4.4 TYPE-01/02）。
  *
  * 全局偏好（跨书共享；**按书保存**是 P1 的 TYPE-05，本类型不含 bookId）。
@@ -34,6 +47,7 @@ enum class ReaderTextAlign { START, JUSTIFY }
  * - TYPE-01：[fontSize] 字号 / [fontFamily] 字体 / [fontWeight] 字重 / [lineHeight] 行高
  *   / [paragraphSpacing] 段距 / [pageMargins] 页边距 / [textAlign] 对齐。
  * - TYPE-02：[theme] 主题（含 [ReaderTheme.SYSTEM] 跟随系统）。
+ * - READ-04：[scroll] 翻页方式（分页 / 纵向滚动）。
  *
  * 数值语义（与 Readium 字段对齐，UI 层负责范围约束）：
  * - [fontSize]：倍率，1.0 = 引擎默认（UI 范围 0.5–5.0）。
@@ -42,6 +56,7 @@ enum class ReaderTextAlign { START, JUSTIFY }
  * - [paragraphSpacing]：em。
  * - [pageMargins]：倍率。
  * - [fontFamily]：CSS font-family 字符串（如 `"serif"` / `"sans-serif"`）。
+ * - [scroll]：翻页方式（[ReaderScrollMode]），null = 分页 = 引擎默认。
  */
 data class ReaderTypography(
     val fontSize: Double? = null,
@@ -52,6 +67,8 @@ data class ReaderTypography(
     val pageMargins: Double? = null,
     val textAlign: ReaderTextAlign? = null,
     val theme: ReaderTheme? = null,
+    // READ-04：null = 分页（引擎默认，不强制持久化，避免漂移）。
+    val scroll: ReaderScrollMode? = null,
 ) {
     companion object {
         /**

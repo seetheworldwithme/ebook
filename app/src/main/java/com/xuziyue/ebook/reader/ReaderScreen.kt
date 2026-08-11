@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -54,6 +56,7 @@ import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
@@ -140,6 +143,7 @@ fun ReaderScreen(
                 onTextAlign = { viewModel.setTextAlign(it) },
                 onTheme = { viewModel.setTheme(it) },
                 onFontFamily = { viewModel.setFontFamily(it) },
+                onScrollMode = { viewModel.setScrollMode(it) },
             )
         }
 
@@ -198,7 +202,9 @@ private fun ReaderTopBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        // edge-to-edge 下避开 status bar 触摸拦截区（真机回归发现：未加 inset 时顶栏按钮
+        // 上半进入 status bar 区被系统拦截，目录/进度/返回点不动——READ-02）。
+        modifier = modifier.fillMaxWidth().statusBarsPadding(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         Row(
@@ -238,7 +244,8 @@ private fun ReaderBottomBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        // 对称避 navigation bar（手势条区），底栏按钮完全可点。
+        modifier = modifier.fillMaxWidth().navigationBarsPadding(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         Row(
@@ -381,6 +388,7 @@ private fun TypographySheet(
     onTextAlign: (ReaderTextAlign) -> Unit,
     onTheme: (ReaderTheme) -> Unit,
     onFontFamily: (String?) -> Unit,
+    onScrollMode: (ReaderScrollMode) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -446,6 +454,18 @@ private fun TypographySheet(
                 ),
                 selected = typography.fontFamily,
                 onSelect = onFontFamily,
+            )
+
+            // 翻页方式（READ-04：分页 / 纵向滚动）
+            OptionGroup(
+                label = "翻页方式",
+                options = listOf(
+                    ReaderScrollMode.PAGINATED to "分页",
+                    ReaderScrollMode.SCROLL to "滚动",
+                ),
+                // null = 分页（引擎默认），UI 显示 PAGINATED 选中。
+                selected = typography.scroll ?: ReaderScrollMode.PAGINATED,
+                onSelect = onScrollMode,
             )
 
             // 主题（TYPE-02，含跟随系统）

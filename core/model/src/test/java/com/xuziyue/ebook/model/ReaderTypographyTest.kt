@@ -24,6 +24,7 @@ class ReaderTypographyTest {
         assertNull(d.paragraphSpacing)
         assertNull(d.pageMargins)
         assertNull(d.textAlign)
+        assertNull(d.scroll) // READ-04：默认 null（分页 = 引擎默认）
     }
 
     @Test
@@ -39,6 +40,17 @@ class ReaderTypographyTest {
     }
 
     @Test
+    fun `copy 设置 scroll 翻页方式后其余字段保持`() {
+        val base = ReaderTypography.Default
+        val scrolled = base.copy(scroll = ReaderScrollMode.SCROLL)
+
+        assertEquals(ReaderScrollMode.SCROLL, scrolled.scroll)
+        // 未动字段保留（含默认 theme SYSTEM）
+        assertEquals(ReaderTheme.SYSTEM, scrolled.theme)
+        assertNull(scrolled.fontSize)
+    }
+
+    @Test
     fun `ReaderTheme 与 ReaderTextAlign 的 name 稳定，可作持久化 key`() {
         // 持久化层用 enum.name 存取，name 不可随意改名（会破坏已落盘偏好）。
         assertEquals("LIGHT", ReaderTheme.LIGHT.name)
@@ -47,6 +59,9 @@ class ReaderTypographyTest {
         assertEquals("SYSTEM", ReaderTheme.SYSTEM.name)
         assertEquals("START", ReaderTextAlign.START.name)
         assertEquals("JUSTIFY", ReaderTextAlign.JUSTIFY.name)
+        // READ-04 翻页方式
+        assertEquals("PAGINATED", ReaderScrollMode.PAGINATED.name)
+        assertEquals("SCROLL", ReaderScrollMode.SCROLL.name)
     }
 
     @Test
@@ -54,5 +69,7 @@ class ReaderTypographyTest {
         // 读回持久化值时用 valueOf(name)。
         assertEquals(ReaderTheme.SYSTEM, ReaderTheme.valueOf("SYSTEM"))
         assertEquals(ReaderTextAlign.JUSTIFY, ReaderTextAlign.valueOf("JUSTIFY"))
+        assertEquals(ReaderScrollMode.SCROLL, ReaderScrollMode.valueOf("SCROLL"))
+        assertEquals(ReaderScrollMode.PAGINATED, ReaderScrollMode.valueOf("PAGINATED"))
     }
 }

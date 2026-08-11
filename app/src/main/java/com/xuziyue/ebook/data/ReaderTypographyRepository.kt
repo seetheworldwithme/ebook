@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
@@ -47,6 +48,7 @@ class ReaderTypographyRepository(
             pageMargins = this[KEY_PAGE_MARGINS],
             // 枚举用 name 存取；未来改名时 valueOf 失败 → null（降级为引擎默认），不崩。
             textAlign = this[KEY_TEXT_ALIGN]?.let { runCatching { ReaderTextAlign.valueOf(it) }.getOrNull() },
+            scroll = this[KEY_SCROLL]?.let { runCatching { ReaderScrollMode.valueOf(it) }.getOrNull() },
             // theme 未设默认跟随系统（产品默认，design.md §4.4 TYPE-02）。
             theme = theme ?: ReaderTheme.SYSTEM,
         )
@@ -60,6 +62,7 @@ class ReaderTypographyRepository(
         putDoubleOrNull(KEY_PARAGRAPH_SPACING, t.paragraphSpacing)
         putDoubleOrNull(KEY_PAGE_MARGINS, t.pageMargins)
         putStringOrNull(KEY_TEXT_ALIGN, t.textAlign?.name)
+        putStringOrNull(KEY_SCROLL, t.scroll?.name)
         putStringOrNull(KEY_THEME, t.theme?.name)
     }
 
@@ -79,6 +82,7 @@ class ReaderTypographyRepository(
         val KEY_PARAGRAPH_SPACING = doublePreferencesKey("paragraph_spacing")
         val KEY_PAGE_MARGINS = doublePreferencesKey("page_margins")
         val KEY_TEXT_ALIGN = stringPreferencesKey("text_align")
+        val KEY_SCROLL = stringPreferencesKey("scroll")
         val KEY_THEME = stringPreferencesKey("theme")
     }
 }

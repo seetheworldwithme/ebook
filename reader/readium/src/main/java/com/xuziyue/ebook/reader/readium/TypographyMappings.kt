@@ -1,5 +1,6 @@
 package com.xuziyue.ebook.reader.readium
 
+import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
@@ -32,6 +33,8 @@ fun ReaderTypography.toEpubPreferences(isSystemDark: Boolean): EpubPreferences =
         pageMargins = pageMargins,
         textAlign = textAlign?.toReadium(),
         theme = theme?.toReadium(isSystemDark),
+        // READ-04：scroll=true 纵向滚动 / null·false 分页（引擎默认）。
+        scroll = scroll?.toReadium(),
     )
 
 @OptIn(ExperimentalReadiumApi::class)
@@ -47,4 +50,13 @@ private fun ReaderTheme.toReadium(isSystemDark: Boolean): Theme = when (this) {
     ReaderTheme.DARK -> Theme.DARK
     // 跟随系统：运行时据系统暗色解析为 LIGHT / DARK（SEPIA 无系统语义，不参与）。
     ReaderTheme.SYSTEM -> if (isSystemDark) Theme.DARK else Theme.LIGHT
+}
+
+/**
+ * READ-04 翻页方式映射：PAGINATED→分页（scroll=false）、SCROLL→纵向滚动（scroll=true）。
+ */
+@OptIn(ExperimentalReadiumApi::class)
+private fun ReaderScrollMode.toReadium(): Boolean = when (this) {
+    ReaderScrollMode.PAGINATED -> false
+    ReaderScrollMode.SCROLL -> true
 }

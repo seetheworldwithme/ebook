@@ -1,5 +1,6 @@
 package com.xuziyue.ebook.reader
 
+import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
@@ -41,6 +42,7 @@ class TypographyMappingsTest {
         assertNull(prefs.pageMargins)
         assertNull(prefs.textAlign)
         assertNull(prefs.theme)
+        assertNull(prefs.scroll) // READ-04
     }
 
     @Test
@@ -73,6 +75,19 @@ class TypographyMappingsTest {
             TextAlign.JUSTIFY,
             ReaderTypography(textAlign = ReaderTextAlign.JUSTIFY).toEpubPreferences(false).textAlign,
         )
+    }
+
+    @Test
+    fun `READ-04 scroll 映射 SCROLL 为 true、PAGINATED 为 false、null 为 null`() {
+        assertEquals(
+            true,
+            ReaderTypography(scroll = ReaderScrollMode.SCROLL).toEpubPreferences(false).scroll,
+        )
+        assertEquals(
+            false,
+            ReaderTypography(scroll = ReaderScrollMode.PAGINATED).toEpubPreferences(false).scroll,
+        )
+        assertNull(ReaderTypography(scroll = null).toEpubPreferences(false).scroll)
     }
 
     @Test

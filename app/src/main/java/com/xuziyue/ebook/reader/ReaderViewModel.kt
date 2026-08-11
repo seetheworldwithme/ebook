@@ -9,6 +9,7 @@ import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.model.ReaderCapabilities
+import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
@@ -246,6 +247,9 @@ class ReaderViewModel @Inject constructor(
     fun setFontFamily(family: String?) = updateTypography { it.copy(fontFamily = family) }
 
     fun setTheme(theme: ReaderTheme) = updateTypography { it.copy(theme = theme) }
+
+    /** READ-04：切换分页 / 纵向滚动（持久化 → submitPreferences 自动保 Locator 重排）。 */
+    fun setScrollMode(mode: ReaderScrollMode) = updateTypography { it.copy(scroll = mode) }
 
     /**
      * 写入持久化层；observe 自动回流 → [typography]/[preferences] 更新 → Fragment submitPreferences。
