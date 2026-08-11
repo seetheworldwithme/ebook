@@ -47,6 +47,8 @@ import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
+import org.readium.r2.shared.publication.services.search.SearchIterator
+import org.readium.r2.shared.publication.services.search.search
 import org.readium.r2.shared.util.AbsoluteUrl
 import java.io.File
 
@@ -91,6 +93,11 @@ class ReaderViewModel @Inject constructor(
     val typography: StateFlow<ReaderTypography> =
         typographyRepository.observe()
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default)
+
+    /** READ-03：音量键翻页开关（派生自 typography；Fragment collect 后决定是否拦截音量键）。 */
+    val volumeKeyPaging: StateFlow<Boolean> = typography
+        .map { it.volumeKeyPaging }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     /** 当前系统是否暗色（由 ReaderScreen 据 isSystemInDarkTheme 推入），用于解析 [ReaderTheme.SYSTEM]。 */
     private val _systemDark = MutableStateFlow(false)
@@ -150,6 +157,18 @@ class ReaderViewModel @Inject constructor(
     private val _navCommands = Channel<ReaderNavCommand>(Channel.BUFFERED)
     val navCommands: Flow<ReaderNavCommand> = _navCommands.receiveAsFlow()
 
+    // ===== 书内搜索（READ-05：publication.search → SearchIterator 分批 → 上下文 + 跳转）=====
+
+    /** 搜索 UI 状态（Idle / Loading / Results / Error）。 */
+    private val _searchState = MutableStateFlow<SearchUiState>(SearchUiState.Idle)
+    val searchState: StateFlow<SearchUiState> = _searchState.asStateFlow()
+
+    /** 活跃搜索迭代器（分页拉取；切书 / 清空 / onCleared 时 close 释放）。 */
+    private var searchIterator: SearchIterator? = null
+
+    /** 当前搜索协程（新搜索取消旧的，避免并发竞态）。 */
+    private var searchJob: Job? = null
+
     /** 跳转历史栈（READ-02：目录/进度跳转后可返回上一位置；Navigator 无 history，应用层自管）。 */
     private val jumpHistory = ArrayDeque<Locator>()
     private val _canGoBack = MutableStateFlow(false)
@@ -173,10 +192,11 @@ class ReaderViewModel @Inject constructor(
     private fun openPublication(bookId: String) {
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
-            // 切书重置跳转状态（目录 / 历史 / 进度）
+            // 切书重置跳转状态（目录 / 历史 / 进度）+ 清空搜索（释放旧 iterator）
             _tableOfContents.value = emptyList()
             jumpHistory.clear()
             _canGoBack.value = false
+            clearSearch()
 
             val book = bookRepository.getById(bookId) ?: run {
                 _uiState.value = ReaderUiState.Error("书籍不存在：$bookId")
@@ -283,6 +303,9 @@ class ReaderViewModel @Inject constructor(
     /** READ-04：切换分页 / 纵向滚动（持久化 → submitPreferences 自动保 Locator 重排）。 */
     fun setScrollMode(mode: ReaderScrollMode) = updateTypography { it.copy(scroll = mode) }
 
+    /** READ-03：开关音量键翻页（持久化 → Fragment collect 后决定是否拦截 KeyEvent）。 */
+    fun setVolumeKeyPaging(enabled: Boolean) = updateTypography { it.copy(volumeKeyPaging = enabled) }
+
     /**
      * 写入持久化层；observe 自动回流 → [typography]/[preferences] 更新 → Fragment submitPreferences。
      * 单向数据流（不乐观更新内存），避免快速连点时内存与 DataStore 竞态回退。
@@ -371,6 +394,16 @@ class ReaderViewModel @Inject constructor(
         _navCommands.trySend(ReaderNavCommand.GoToLocator(locator))
     }
 
+    /** 点击右边缘翻下一页（READ-03，分页模式；scroll 模式由 UI 不显示 tap 区）。 */
+    fun goForwardPaging() {
+        _navCommands.trySend(ReaderNavCommand.GoForward)
+    }
+
+    /** 点击左边缘翻上一页（READ-03，分页模式）。 */
+    fun goBackwardPaging() {
+        _navCommands.trySend(ReaderNavCommand.GoBackward)
+    }
+
     /** locator 等价判定（书签去重 / isBookmarked 共用，对齐 BookmarkRepository.PROGRESSION_EPS）。 */
     private fun sameBookmarkPosition(a: Locator, b: Locator): Boolean {
         if (a.href != b.href) return false
@@ -411,6 +444,83 @@ class ReaderViewModel @Inject constructor(
         _canGoBack.value = true
     }
 
+    // ===== 书内搜索（READ-05：publication.search → SearchIterator 分批 → 上下文 + 跳转）=====
+
+    /**
+     * 搜索 [query]：空白清空；非空 → 取消旧搜索 + close 旧 iterator → [Publication][org.readium.r2.shared.publication.Publication].search
+     * → 取首批结果（[mapLocators] 出上下文 + 命中词）。搜索选项用引擎默认（大小写不敏感，适配中英文混排）。
+     * 失败给可理解错误（CLAUDE.md）。能搜索时入口由 [ReaderCapabilities.canSearch] gating（红线 #2）。
+     */
+    fun search(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            clearSearch()
+            return
+        }
+        val publication = (uiState.value as? ReaderUiState.Ready)?.publication ?: return
+        // 重置旧搜索：取消协程 + 释放旧 iterator（SearchIterator 是 Closeable，红线 #4 不留资源）。
+        searchJob?.cancel()
+        searchIterator?.close()
+        searchIterator = null
+        _searchState.value = SearchUiState.Loading(trimmed)
+        searchJob = viewModelScope.launch {
+            // Publication.search 返回 SearchIterator?（非 Try；失败返回 null，iterator.next() 才返回 Try<LocatorCollection, SearchError>）。
+            // EPUB/TXT 经 isSearchable gating 已保证可搜；null 兜底给可理解提示。
+            val iterator = publication.search(trimmed) ?: run {
+                _searchState.value = SearchUiState.Error("搜索失败，请换个关键词试试")
+                return@launch
+            }
+            searchIterator = iterator
+            val count = iterator.resultCount
+            val collection = iterator.next().getOrNull()
+            if (collection == null) {
+                _searchState.value = SearchUiState.Error("搜索失败，请换个关键词试试")
+                return@launch
+            }
+            val items = mapLocators(collection.locators)
+            _searchState.value = SearchUiState.Results(
+                query = trimmed,
+                resultCount = count,
+                items = items,
+                loadingMore = false,
+                exhausted = items.isEmpty(),
+            )
+        }
+    }
+
+    /** 加载更多结果（READ-05 分批）：仅 Results 且未在加载 / 未耗尽时拉取 iterator.next()。 */
+    fun loadMoreResults() {
+        val iterator = searchIterator ?: return
+        val current = _searchState.value as? SearchUiState.Results ?: return
+        if (current.loadingMore || current.exhausted) return
+        _searchState.value = current.copy(loadingMore = true)
+        viewModelScope.launch {
+            val collection = iterator.next().getOrNull()
+            val base = _searchState.value as? SearchUiState.Results ?: return@launch
+            if (collection == null) {
+                _searchState.value = base.copy(loadingMore = false)
+                return@launch
+            }
+            val more = mapLocators(collection.locators)
+            _searchState.value = base.copy(
+                items = base.items + more,
+                loadingMore = false,
+                exhausted = more.isEmpty(),
+                // iterator 遍历后 resultCount 可能更新为准确总数。
+                resultCount = iterator.resultCount ?: base.resultCount,
+            )
+        }
+    }
+
+    /** 清空搜索（取消协程 + close iterator + 状态回 Idle）。切书 / onCleared 调。 */
+    fun clearSearch() {
+        searchJob?.cancel()
+        searchJob = null
+        searchIterator?.close()
+        searchIterator = null
+        _searchState.value = SearchUiState.Idle
+    }
+
     // ===== EpubNavigatorFragment.Listener =====
 
     override fun onExternalLinkActivated(url: AbsoluteUrl) {
@@ -425,6 +535,7 @@ class ReaderViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        clearSearch() // 释放搜索 iterator（Closeable）
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
     }
 

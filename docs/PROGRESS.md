@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 14 | 0 |
+| P0（MVP 必做） | 28 | 16 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 14 | 0 |
+| 合计 | 42 | 16 | 0 |
 
-> 当前进度：14 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 收尾 + DATA-01 真机回归（vivo V2329A）全过转 ✅）。详见文末变更记录。
+> 当前进度：16 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 + DATA-01 + READ-03 + READ-05 真机回归全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -68,9 +68,9 @@
 | --- | --- | --- |
 | READ-01 | ✅ | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator）。刀1：ReadingProgress(Room) 替代 LocatorStore；真机回归强杀+冷启 16%→16% 恢复通过 |
 | READ-02 | ✅ | 目录、章节跳转、当前位置百分比、进度拖动。真机：目录 sheet 章节跳转 + 返回上一位置（按钮出现/消失 + 正文回退）+ 进度 ProgressSheet ◄►微调（0→5→3%）全过。修复顶栏 status bar 触摸 bug（见变更记录） |
-| READ-03 | ⬜ | 点击区域、左右滑动、音量键翻页（音量键可关闭） |
+| READ-03 | ✅ | 点击区域、左右滑动、音量键翻页（音量键可关闭）。刀 READ-03/05：①音量键 Window.Callback 拦截（dispatchKeyEvent 在 AndroidFragment 嵌套下不触发，改 Window.Callback 入口）+ 可关开关（TypographySheet/DataStore 默认开）；②点击左右边缘翻页（分页模式 Compose overlay 20% 宽 → goForward/goBackward）；③左右滑动 paginated 内置（刀3）。真机（vivo V2329A）全过：音量上下键翻页（手指）/ 关开关恢复系统音量 / 杀重启开关保位 / 点击边缘翻页（adb 验正文推进） |
 | READ-04 | ✅ | 分页与纵向滚动两种模式。刀3：ReaderScrollMode 接 EpubPreferences.scroll + 排版面板「翻页方式」。真机：切模式实时生效 + 双向保位（3%↔3%）+ 滚动连续/分页翻页 + 高亮跨模式存活 + 杀重启保模式。FXL 上 scroll 无效（Readium 行为，已知边界留 V1） |
-| READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
+| READ-05 | ✅ | 书内搜索（PDF 若未通过验证则明确不显示入口）。刀 READ-03/05：`publication.search`→SearchIterator 分批 `next()`→上下文+命中词高亮+结果数+点跳转；顶栏搜索入口按 `canSearch` gating（红线 #2，PDF 未验证隐藏）；SearchSheet（独立搜索按钮 + adjustResize 键盘 + 滚到底自动加载更多）。真机（vivo V2329A）全过：搜 Rabbit 11 条结果 + 上下文 + 命中词高亮 + 大小写不敏感（rabbit 小写也命中）+ 点结果跳转（canGoBack 出现）+ 键盘弹出（mInputShown=true） |
 | READ-06 | ✅ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成）。刀 READ-06/07：BookmarkEntity 表 + toggle 去重（href+progression ε）+ 顶栏 toggle + BookmarkSheet。真机（vivo V2329A）全过：加/取消/去重/列表/跳回（进度回 3%）/isBookmarked 跟位置响应式/杀重启书签+进度不丢 |
 | READ-07 | ✅ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用）。刀 READ-06/07：高亮落 Annotation 表 + DB 驱动渲染（根治红线 #9 内存态）+ AnnotationSheet + 笔记编辑；刀 READ-07 收尾：选中菜单「复制」(ClipboardManager，Toast 反馈)/「分享」(ACTION_SEND+chooser，canCopyShare 首次消费 gating) + 四色调色板（updateColor 全链路，DB 驱动回流自动重渲染）。**真机回归（vivo V2329A）全过**：ActionMode 三项菜单 + 分享弹系统 chooser + 复制 Toast「已复制」(setPrimaryClip 执行) + 四色改色 DB PINK + 正文高亮黄→粉 + force-stop 重开颜色保留 |
 | READ-08 | ✅ | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository；真机回归翻页后强杀恢复通过 |
@@ -166,6 +166,21 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-03 翻页 + READ-05 书内搜索 🚧→✅。P0 16 ✅ / 0 🚧。** adb 自动化（搜索 / 点击翻页 / 键盘）+ 徐先生手指（音量键 / 开关 / 保位 / 高亮）混合验证。
+> **READ-05 搜索真机**：搜 "Rabbit" → **找到 11 条结果** + 每条带 before/命中词/after 上下文 + **大小写不敏感**（"a rabbit with either" 小写命中）+ 命中词主题色高亮（徐先生肉眼确认）+ 点结果跳转（SearchSheet 关 +「返回上一阅读位置」出现 = jumpToLocator + pushHistory）+ canSearch gating（搜索图标在位）+ 键盘 `mInputShown=true`。
+> **READ-03 翻页真机**：① **音量键翻页**（徐先生手指物理按键）：上=上一页 / 下=下一页；② **关开关恢复系统音量**；③ **杀重启开关保位**（DataStore）；④ **点击左右边缘翻页**（adb 验：tap 右边缘×6 后截图显著差异 149 万像素、bbox 覆盖正文区 = 正文推进）；⑤ 左右滑动 paginated 内置（刀3）。
+> **音量键拦截方案迭代（关键踩坑）**：首版自定义 `ReaderNavigatorContainer`(FrameLayout) 重写 `dispatchKeyEvent` —— adb log 显示 **完全不触发**（Compose AndroidFragment 嵌套下 KeyEvent 沿焦点链 dispatch，container 不在路径）。改 **Window.Callback 包装**（onResume 包 Activity window.callback，onPause 还原，Activity.dispatchKeyEvent 最上游入口）→ 真机物理键工作。保留两层（Window.Callback 主 + dispatchKeyEvent 备）。**adb `input keyevent 25` 模拟音量键失败**（走 InputManager 注入路径被系统直接处理、不到 app），徐先生手指物理键通过——与 adb 驱动不了 Readium WebView 手势同类。
+> **键盘 bug 修复**：首版点搜索框不弹键盘 → ① 搜索按钮从 trailingIcon 移出（TextField + 独立 Button 的 Row，避免 trailingIcon 的 keyboard.hide 干扰 + 点右侧误触）；② Manifest `windowSoftInputMode=adjustResize`。修后 adb 验 `mInputShown=true`。
+> **点击翻页**：Readium paginated **默认不内置**点击翻页（徐先生真机验）→ 补 Compose overlay（左右各 20% 宽，仅分页模式；中间 60% 留 WebView 文本选择/链接）→ navCommands 加 GoForward/GoBackward → goForward/goBackward。
+> **测试证据**：`:app:testDebugUnitTest` 101 passed（0 fail）+ `:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL + 真机 adb（搜索/点击翻页/键盘 mInputShown）+ 徐先生手指（音量键/开关/保位/高亮）+ logcat 干净。
+
+> 实现状态（2026-08-11）：**刀 READ-03/READ-05 代码完成 🚧 待真机转 ✅：书内搜索 + 翻页交互（点击/左右滑动/音量键可关）。单测+编译+lint 全绿，未真机回归（纠正：不应在未真机回归前置 ✅，对齐项目「真机过才 ✅」惯例）。** 两件 P0 一起做（剩余 P0 下一组），补齐「阅读时查找定位 + 翻页交互」。
+> **READ-05 书内搜索**：Readium `publication.search(query)` → `SearchIterator`（**返回 `SearchIterator?` 非 `Try`**，失败返回 null；`iterator.next()` 才返回 `Try<LocatorCollection, SearchError>`，用 `.getOrNull()` 取首批）；`iterator.resultCount`（总数，可空）+ `next()` 分批 → `LocatorCollection.locators` 每条带 `text.before/highlight/after` 上下文。新增 `ReaderSearch.kt`（`SearchResultItem` + `SearchUiState` sealed[Idle/Loading/Results/Error] + `mapLocators` 纯函数）；`ReaderViewModel` 持 `searchState` + `searchIterator`(Closeable) + `searchJob`（新搜索 cancel 旧 + close 旧 iterator，切书 / onCleared 释放）；`search/loadMoreResults/clearSearch`；跳转复用 `jumpToLocator`（GoToLocator 指令）。UI：顶栏搜索图标（`canSearch` gating 红线 #2，PDF 未验证隐藏）→ `SearchSheet`（OutlinedTextField imeAction Search + 状态分支 + LazyColumn 结果项 `buildAnnotatedString` 高亮命中词 + 滚到底 `snapshotFlow` 自动 loadMore）。
+> **READ-03 翻页**：① **左右滑动**——Readium paginated 内置（刀3 真机已验，免费，零代码）。② **点击区域**——待真机验是否 Readium 内置（不内置则用 `VisualNavigator.addInputListener` 补左右边缘 tap）。③ **音量键翻页（可关）**——`EpubNavigatorFragment.goForward/goBackward`；开关 `ReaderTypography.volumeKeyPaging`（默认 true）持久化 DataStore，UI 在 TypographySheet「翻页」区 Switch（徐先生定，不新建设置入口）；**自定义 `ReaderNavigatorContainer`(FrameLayout) 重写 `dispatchKeyEvent`** 拦截音量键——WebView 抢焦点，普通 `setOnKeyListener` 仅宿主获焦时触发、音量键被 WebView 分发后不回流，不可靠；自定义 ViewGroup 在分发给 WebView 前拦截并消费 DOWN+UP（阻止系统调音量），上键=后退下键=前进。开关关时不拦截（恢复系统音量，满足「可关闭」+「不与音量冲突」，MVP 无 TTS）。
+> **测试（新增 9，全绿）**：ReaderSearchTest 5（mapLocators：完整 text / 部分缺失兜底 / 无 text 字段 / 空列表 / locator 保留跳转）；ReaderTypographyRepositoryTest +3（volumeKeyPaging 首次默认 true / set false 持久化 / set true 往返）；ReaderTypographyTest +1（copy volumeKeyPaging + Default true）。`:core:model` **14** / `:reader:readium` **42** / `:app` **101** = **157 单测全绿**（0 fail 0 error 0 skip）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（无新 warning，仅既有 @ApplicationContext KT-73255）。
+> **踩坑**：① **`publication.search` 返回 `SearchIterator?` 非 `Try`**——javap Continuation`<? super SearchIterator>`（非 `<? super Try<...>>`）坐实；首版误判为 Try 用 `onSuccess`/`getOrNull` 全报 unresolved，改直接拿 iterator + elvis `?: return` null 兜底；`iterator.next()` 才返回 `Try`（`.getOrNull()` 取 `LocatorCollection?`）。② **MutablePreferences 无 putBoolean**——DataStore 用 set operator `this[key] = value`（同既有 putDoubleOrNull/putStringOrNull helper 范式），非 putXxx 方法。③ **WebView 抢焦点**——音量键拦截必须自定义 ViewGroup 重写 `dispatchKeyEvent`，`setOnKeyListener` 在 WebView 获焦时不触发。
+> **仅单测+编译+lint，未真机回归**——待真机验「① 搜中文→命中数 + 上下文高亮→点跳转 ② 分页/滚动模式均搜 ③ 大书（《万相之王》1796 章）分批加载更多 ④ 音量键上下翻页 ⑤ 排版面板关音量键→按键恢复系统音量不翻页 ⑥ 杀重启开关保位（DataStore）⑦ 点击屏幕翻页是否内置」兜底后转 ✅。
 
 > 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-07 收尾 + DATA-01 导出 🚧→✅。P0 14 ✅ / 0 🚧。** 设备真实数据（万相之王：书签 1 + 高亮「鬼哭」+ 笔记 goodpassage，3%）全链路 adb 自动化 + 图像分析 + sqlite3 直查 + 手指（选中）混合验证。
 > **DATA-01 导出**：笔记 sheet「导出」→ 格式弹窗（Markdown/JSON）→ SAF CreateDocument（默认文件名「万相之王.md/json」，publication.title sanitize 正确）→ 保存「下载」→ adb pull 验内容：**MD**（`# 《万相之王》批注` + 格式 TXT + 进度 3% + 书签 1 + 高亮「鬼哭」+ 笔记 goodpassage + 时间本地格式化 + 颜色中文「黄」，人可读）；**JSON**（顶层 `schemaVersion=1` + exportedAt + `book.id`/title/format + progress/bookmarks/annotations 各带 `locator` 嵌套 PersistedLocator 含**内层 schemaVersion=1** + 完整 Readium Locator href/`text.highlight=鬼哭` + 全 createdAt/updatedAt 时间戳 + color YELLOW）——DATA-01 验收口径（稳定 schema 版本 + 书籍 ID + Locator + 时间戳；Markdown 人可读）全满足。

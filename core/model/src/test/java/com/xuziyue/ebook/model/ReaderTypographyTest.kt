@@ -1,7 +1,9 @@
 package com.xuziyue.ebook.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -25,6 +27,8 @@ class ReaderTypographyTest {
         assertNull(d.pageMargins)
         assertNull(d.textAlign)
         assertNull(d.scroll) // READ-04：默认 null（分页 = 引擎默认）
+        // READ-03：音量键翻页默认开（非 nullable 布尔，产品默认）。
+        assertTrue(d.volumeKeyPaging)
     }
 
     @Test
@@ -48,6 +52,19 @@ class ReaderTypographyTest {
         // 未动字段保留（含默认 theme SYSTEM）
         assertEquals(ReaderTheme.SYSTEM, scrolled.theme)
         assertNull(scrolled.fontSize)
+    }
+
+    @Test
+    fun `copy 设置 volumeKeyPaging 开关后其余字段保持`() {
+        // READ-03：音量键翻页开关，默认 true，可 copy 改 false。
+        val base = ReaderTypography.Default
+        assertTrue(base.volumeKeyPaging)
+
+        val off = base.copy(volumeKeyPaging = false)
+        assertFalse(off.volumeKeyPaging)
+        // 未动字段保留（含默认 theme SYSTEM / scroll null）
+        assertEquals(ReaderTheme.SYSTEM, off.theme)
+        assertNull(off.scroll)
     }
 
     @Test

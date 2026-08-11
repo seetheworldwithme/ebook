@@ -3,6 +3,7 @@ package com.xuziyue.ebook.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -51,6 +52,8 @@ class ReaderTypographyRepository(
             scroll = this[KEY_SCROLL]?.let { runCatching { ReaderScrollMode.valueOf(it) }.getOrNull() },
             // theme 未设默认跟随系统（产品默认，design.md §4.4 TYPE-02）。
             theme = theme ?: ReaderTheme.SYSTEM,
+            // READ-03：音量键翻页开关，未设取 true（产品默认开）。
+            volumeKeyPaging = this@toTypography[KEY_VOLUME_KEY_PAGING] ?: true,
         )
     }
 
@@ -64,6 +67,8 @@ class ReaderTypographyRepository(
         putStringOrNull(KEY_TEXT_ALIGN, t.textAlign?.name)
         putStringOrNull(KEY_SCROLL, t.scroll?.name)
         putStringOrNull(KEY_THEME, t.theme?.name)
+        // READ-03：音量键翻页开关（非 nullable 布尔，用 set operator 写入）。
+        this[KEY_VOLUME_KEY_PAGING] = t.volumeKeyPaging
     }
 
     private fun MutablePreferences.putDoubleOrNull(key: Preferences.Key<Double>, value: Double?) {
@@ -84,5 +89,6 @@ class ReaderTypographyRepository(
         val KEY_TEXT_ALIGN = stringPreferencesKey("text_align")
         val KEY_SCROLL = stringPreferencesKey("scroll")
         val KEY_THEME = stringPreferencesKey("theme")
+        val KEY_VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
     }
 }

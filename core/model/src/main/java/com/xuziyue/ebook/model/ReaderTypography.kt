@@ -48,6 +48,7 @@ enum class ReaderScrollMode { PAGINATED, SCROLL }
  *   / [paragraphSpacing] 段距 / [pageMargins] 页边距 / [textAlign] 对齐。
  * - TYPE-02：[theme] 主题（含 [ReaderTheme.SYSTEM] 跟随系统）。
  * - READ-04：[scroll] 翻页方式（分页 / 纵向滚动）。
+ * - READ-03：[volumeKeyPaging] 音量键翻页开关（app 层按键拦截，**不映射给 Readium 引擎**）。
  *
  * 数值语义（与 Readium 字段对齐，UI 层负责范围约束）：
  * - [fontSize]：倍率，1.0 = 引擎默认（UI 范围 0.5–5.0）。
@@ -69,6 +70,9 @@ data class ReaderTypography(
     val theme: ReaderTheme? = null,
     // READ-04：null = 分页（引擎默认，不强制持久化，避免漂移）。
     val scroll: ReaderScrollMode? = null,
+    // READ-03：音量键翻页开关（app 层 Fragment 拦截 KeyEvent，不传给 Readium）。默认开（主流阅读器行为）。
+    // 非 nullable：与其它 nullable 字段不同，它是布尔开关，未设取 true（产品默认开）。
+    val volumeKeyPaging: Boolean = true,
 ) {
     companion object {
         /**

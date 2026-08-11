@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -39,6 +41,25 @@ class ReaderTypographyRepositoryTest {
         assertNull(t.textAlign)
         assertNull(t.pageMargins)
         assertNull(t.scroll) // READ-04：默认 null（分页）
+        // READ-03：音量键翻页开关，未设取 true（产品默认开）。
+        assertTrue(t.volumeKeyPaging)
+    }
+
+    @Test
+    fun `update 关闭 volumeKeyPaging 后持久化为 false`() = runBlocking {
+        repo.update { it.copy(volumeKeyPaging = false) }
+
+        assertFalse(repo.observe().first().volumeKeyPaging)
+        // 不影响默认 theme
+        assertEquals(ReaderTheme.SYSTEM, repo.observe().first().theme)
+    }
+
+    @Test
+    fun `update 重新开启 volumeKeyPaging 持久化往返`() = runBlocking {
+        repo.update { it.copy(volumeKeyPaging = false) }
+        repo.update { it.copy(volumeKeyPaging = true) }
+
+        assertTrue(repo.observe().first().volumeKeyPaging)
     }
 
     @Test

@@ -2,15 +2,20 @@ package com.xuziyue.ebook.reader
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.AttributeSet
 import android.view.ActionMode
+import android.view.KeyEvent
+import android.widget.FrameLayout
 import android.widget.Toast
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commitNow
@@ -43,6 +48,12 @@ class ReaderFragment : Fragment() {
 
     private var navigator: EpubNavigatorFragment? = null
 
+    // READ-03：音量键翻页开关（collect viewModel.volumeKeyPaging 后更新，默认开）。interceptor 读它决定是否消费。
+    private var volumeKeyPaging = true
+
+    // READ-03：Window.Callback 原始引用（onResume 包装拦截音量键，onPause 还原）。
+    private var originalWindowCallback: Window.Callback? = null
+
     @OptIn(ExperimentalReadiumApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         // 必须在 super.onCreate 前：进程重建时 super.onCreate 用此 factory 恢复 child fragment。
@@ -74,6 +85,10 @@ class ReaderFragment : Fragment() {
         if (viewModel.uiState.value !is ReaderUiState.Ready) {
             removeExistingNavigator()
         }
+
+        // READ-03：绑定音量键拦截器（自定义容器在 dispatchKeyEvent 拦截音量键翻页）。
+        view.findViewById<ReaderNavigatorContainer>(R.id.navigator_container)
+            .volumeKeyInterceptor = ::handleVolumeKey
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -128,6 +143,8 @@ class ReaderFragment : Fragment() {
                 launch { viewModel.preferences.collect { nav.submitPreferences(it) } }
                 // decorations → applyDecorations（高亮渲染，声明整组完整状态）
                 launch { viewModel.decorations.collect { nav.applyDecorations(it, DECORATION_GROUP) } }
+                // READ-03：音量键翻页开关 → 更新本地拦截标志（interceptor 读它决定消费 / 放行）。
+                launch { viewModel.volumeKeyPaging.collect { volumeKeyPaging = it } }
                 // navCommands → 执行目录 / 进度 / 返回跳转（READ-02）
                 launch {
                     viewModel.navCommands.collect { cmd ->
@@ -142,6 +159,8 @@ class ReaderFragment : Fragment() {
                             }
                             is ReaderNavCommand.GoBack -> target.go(cmd.locator, animated = false)
                             is ReaderNavCommand.GoToLocator -> target.go(cmd.locator, animated = false)
+                            is ReaderNavCommand.GoForward -> target.goForward(animated = false)
+                            is ReaderNavCommand.GoBackward -> target.goBackward(animated = false)
                         }
                     }
                 }
@@ -229,6 +248,64 @@ class ReaderFragment : Fragment() {
         selectionActionModeCallback = this@ReaderFragment.selectionActionModeCallback
     }
 
+    /**
+     * 音量键翻页拦截（READ-03）：开关开时消费音量键并翻页，关闭则放行（恢复系统音量调节）。
+     *
+     * 上键 = 上一页（goBackward），下键 = 下一页（goForward）。
+     * 同时消费 DOWN + UP：阻止系统在 ACTION_DOWN 调音量（否则会先闪音量条再翻页），仅 ACTION_UP 翻页。
+     * MVP 无 TTS，不存在 TTS 音量冲突（design.md READ-03「不会与 TTS 音量控制冲突」）。
+     */
+    private fun handleVolumeKey(event: KeyEvent): Boolean {
+        if (!volumeKeyPaging) return false
+        if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP &&
+            event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return false
+        if (event.action == KeyEvent.ACTION_UP) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> navigator?.goBackward(false)
+                KeyEvent.KEYCODE_VOLUME_DOWN -> navigator?.goForward(false)
+            }
+        }
+        return true // 消费 DOWN + UP，阻止系统调音量
+    }
+
+    override fun onResume() {
+        super.onResume()
+        installVolumeKeyInterception()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        removeVolumeKeyInterception()
+    }
+
+    /**
+     * READ-03：包装 Activity Window.Callback，在 [dispatchKeyEvent] 入口拦截音量键。
+     *
+     * 为何不用自定义 ViewGroup dispatchKeyEvent：Compose AndroidFragment 嵌套托管下，KeyEvent
+     * 经 DecorView 沿焦点链 dispatch，container.dispatchKeyEvent 不在调用路径（真机实测未触发）。
+     * Window.Callback 是 Activity.dispatchKeyEvent 的最上游入口，可靠捕获所有物理按键。
+     * onPause 还原原 callback，避免泄漏 / 影响其他界面。
+     */
+    private fun installVolumeKeyInterception() {
+        val window = requireActivity().window
+        if (originalWindowCallback != null) return // 已安装（防重复）
+        val original = window.callback ?: return
+        originalWindowCallback = original
+        window.callback = object : Window.Callback by original {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                if (handleVolumeKey(event)) return true
+                return original.dispatchKeyEvent(event)
+            }
+        }
+    }
+
+    private fun removeVolumeKeyInterception() {
+        originalWindowCallback?.let {
+            requireActivity().window.callback = it
+            originalWindowCallback = null
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         // READ-08：进入后台强制保存最新 locator
@@ -241,5 +318,28 @@ class ReaderFragment : Fragment() {
         const val MENU_HIGHLIGHT_ID = 1
         const val MENU_COPY_ID = 2
         const val MENU_SHARE_ID = 3
+    }
+}
+
+/**
+ * 阅读器导航容器（READ-03）：自定义 FrameLayout，重写 dispatchKeyEvent 拦截音量键翻页。
+ *
+ * 为何不直接 setOnKeyListener：EpubNavigatorFragment 内部的 WebView 会抢占焦点，普通
+ * OnKeyListener 仅在宿主 view 获焦时触发，音量键事件被 WebView 分发后不会回流到容器。
+ * 重写 dispatchKeyEvent 在事件分发给 WebView 之前拦截并消费，可靠阻止系统调音量。
+ * 由 XML（fragment_reader.xml）inflate 实例化，承载 EpubNavigatorFragment。
+ */
+class ReaderNavigatorContainer @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyle: Int = 0,
+) : FrameLayout(context, attrs, defStyle) {
+
+    /** 音量键拦截器：返回 true 消费（翻页 + 阻止系统音量），false 放行。 */
+    var volumeKeyInterceptor: ((KeyEvent) -> Boolean)? = null
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (volumeKeyInterceptor?.invoke(event) == true) return true
+        return super.dispatchKeyEvent(event)
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,7 +27,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Tune
@@ -54,6 +59,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -63,10 +69,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -79,7 +91,10 @@ import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
 import com.xuziyue.ebook.ui.relativeTime
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import org.readium.r2.shared.publication.Link
+import org.readium.r2.shared.publication.Locator
 
 /**
  * Reader 主界面（Compose）。
@@ -122,6 +137,7 @@ fun ReaderScreen(
     val isBookmarked by viewModel.isBookmarked.collectAsStateWithLifecycle()
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val annotations by viewModel.annotations.collectAsStateWithLifecycle()
+    val searchState by viewModel.searchState.collectAsStateWithLifecycle()
 
     // DATA-01 导出：SAF CreateDocument（MD/JSON 各一 launcher）+ 结果 Toast 反馈。
     val context = LocalContext.current
@@ -154,10 +170,30 @@ fun ReaderScreen(
     var showAnnotations by remember { mutableStateOf(false) }
     var editingAnnotation by remember { mutableStateOf<AnnotationItem?>(null) }
     var showExportFormat by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
         AndroidFragment<ReaderFragment>(modifier = Modifier.fillMaxSize())
+
+        // READ-03：点击左右边缘翻页（仅分页模式；scroll 模式是上下滚动，点击无意义）。
+        // 左右各 20% 宽，中间 60% 留给 WebView 文本选择 / 链接。顶栏 / 底栏在更高 z 层覆盖上下区。
+        if (typography.scroll != ReaderScrollMode.SCROLL) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.2f)
+                    .align(Alignment.TopStart)
+                    .clickable { viewModel.goBackwardPaging() },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.2f)
+                    .align(Alignment.TopEnd)
+                    .clickable { viewModel.goForwardPaging() },
+            )
+        }
 
         // 顶部控制条（READ-02：目录 / 返回上一位置 / 进度入口；READ-06：书签 toggle）
         ReaderTopBar(
@@ -165,8 +201,10 @@ fun ReaderScreen(
             canGoBack = canGoBack,
             isBookmarked = isBookmarked,
             canBookmark = capabilities.canBookmark,
+            canSearch = capabilities.canSearch,
             onBack = onBack,
             onOpenToc = { showToc = true },
+            onOpenSearch = { showSearch = true },
             onGoBack = { viewModel.goBack() },
             onToggleBookmark = { viewModel.toggleBookmark() },
             onOpenProgress = { showProgress = true },
@@ -200,6 +238,7 @@ fun ReaderScreen(
                 onTheme = { viewModel.setTheme(it) },
                 onFontFamily = { viewModel.setFontFamily(it) },
                 onScrollMode = { viewModel.setScrollMode(it) },
+                onVolumeKeyPaging = { viewModel.setVolumeKeyPaging(it) },
             )
         }
 
@@ -218,6 +257,17 @@ fun ReaderScreen(
                 progression = progression,
                 onJump = { viewModel.jumpToProgression(it) },
                 onDismiss = { showProgress = false },
+            )
+        }
+
+        // 书内搜索面板（READ-05：canSearch gating 的入口在顶栏）
+        if (showSearch) {
+            SearchSheet(
+                state = searchState,
+                onSearch = { viewModel.search(it) },
+                onLoadMore = { viewModel.loadMoreResults() },
+                onJump = { viewModel.jumpToLocator(it); showSearch = false },
+                onDismiss = { showSearch = false },
             )
         }
 
@@ -316,8 +366,10 @@ private fun ReaderTopBar(
     canGoBack: Boolean,
     isBookmarked: Boolean,
     canBookmark: Boolean,
+    canSearch: Boolean,
     onBack: () -> Unit,
     onOpenToc: () -> Unit,
+    onOpenSearch: () -> Unit,
     onGoBack: () -> Unit,
     onToggleBookmark: () -> Unit,
     onOpenProgress: () -> Unit,
@@ -340,6 +392,12 @@ private fun ReaderTopBar(
                 }
                 IconButton(onClick = onOpenToc) {
                     Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录")
+                }
+                // READ-05：书内搜索入口（canSearch gating，红线 #2；PDF 未验证则隐藏）。
+                if (canSearch) {
+                    IconButton(onClick = onOpenSearch) {
+                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                    }
                 }
                 // READ-02：目录/进度跳转后可返回上一阅读位置（无历史时隐藏）。
                 if (canGoBack) {
@@ -512,6 +570,156 @@ private fun ProgressSheet(
 }
 
 /**
+ * 书内搜索面板（READ-05）。
+ *
+ * 顶部 [OutlinedTextField]（按搜索键触发 [onSearch]）；下方按 [SearchUiState] 分支渲染：
+ * Idle→提示 / Loading→进度 / Results→结果数 + 列表（命中词主题色高亮，点跳转，滚到底自动加载更多）
+ * / Error→消息。入口由顶栏搜索图标按 `canSearch` gating（红线 #2）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchSheet(
+    state: SearchUiState,
+    onSearch: (String) -> Unit,
+    onLoadMore: () -> Unit,
+    onJump: (Locator) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var query by remember { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("搜索本书内容…") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    onSearch(query)
+                    keyboard?.hide()
+                }),
+                modifier = Modifier.weight(1f),
+            )
+            // 显式「搜索」按钮：软键盘搜索键的补充，便于 adb 点击 + 用户明确触发。
+            // 放 TextField 外（Row 兄弟）而非 trailingIcon，避免点输入框右侧误触按钮 + 不干扰焦点。
+            Button(
+                onClick = { onSearch(query); keyboard?.hide() },
+                modifier = Modifier.padding(start = 8.dp),
+            ) { Text("搜索") }
+        }
+        Spacer(Modifier.height(8.dp))
+        when (state) {
+            is SearchUiState.Idle -> Text(
+                "输入关键词后按搜索键，在全书查找。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+            )
+            is SearchUiState.Loading -> Row(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("搜索「${state.query}」中…")
+            }
+            is SearchUiState.Error -> Text(
+                state.message,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+            )
+            is SearchUiState.Results -> ResultsBody(state, onLoadMore, onJump)
+        }
+    }
+}
+
+/** 搜索结果列表（READ-05）：结果数 + 命中词高亮列表，滚到底自动加载更多。 */
+@Composable
+private fun ResultsBody(
+    state: SearchUiState.Results,
+    onLoadMore: () -> Unit,
+    onJump: (Locator) -> Unit,
+) {
+    val countText = when {
+        state.resultCount != null -> "找到 ${state.resultCount} 条结果"
+        state.exhausted -> "共 ${state.items.size} 条结果"
+        else -> "已加载 ${state.items.size} 条结果"
+    }
+    Text(
+        countText,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+    )
+    if (state.items.isEmpty()) {
+        Text(
+            "没有匹配「${state.query}」的内容",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+        )
+    } else {
+        val listState = rememberLazyListState()
+        // 滚动接近底部时自动加载下一批（分批避免大书卡死）。
+        LaunchedEffect(state.items.size) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .filterNotNull()
+                .distinctUntilChanged()
+                .collect { lastVisible ->
+                    if (lastVisible >= state.items.size - 3 && !state.loadingMore && !state.exhausted) {
+                        onLoadMore()
+                    }
+                }
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
+        ) {
+            items(state.items.size) { index ->
+                SearchResultRow(state.items[index]) { onJump(state.items[index].locator) }
+                HorizontalDivider(modifier = Modifier.padding(start = 24.dp))
+            }
+            if (state.loadingMore) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 单条搜索结果：上下文 + 命中词主题色高亮，点击跳转原文（READ-05）。 */
+@Composable
+private fun SearchResultRow(item: SearchResultItem, onClick: () -> Unit) {
+    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+    val text = buildAnnotatedString {
+        append(item.before)
+        withStyle(SpanStyle(background = highlightColor)) { append(item.highlight) }
+        append(item.after)
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+    )
+}
+
+/**
  * 排版偏好面板（design.md §4.4 TYPE-01/02）。
  *
  * 字号/行高/段距/页边距用 Slider（松手写一次，拖动用本地 state 跟手，避免高频写 DataStore）；
@@ -531,6 +739,7 @@ private fun TypographySheet(
     onTheme: (ReaderTheme) -> Unit,
     onFontFamily: (String?) -> Unit,
     onScrollMode: (ReaderScrollMode) -> Unit,
+    onVolumeKeyPaging: (Boolean) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -609,6 +818,19 @@ private fun TypographySheet(
                 selected = typography.scroll ?: ReaderScrollMode.PAGINATED,
                 onSelect = onScrollMode,
             )
+
+            // 音量键翻页开关（READ-03：app 层 Fragment 拦截 KeyEvent，不传 Readium 引擎）。
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("音量键翻页", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = typography.volumeKeyPaging,
+                    onCheckedChange = onVolumeKeyPaging,
+                )
+            }
 
             // 主题（TYPE-02，含跟随系统）
             OptionGroup(

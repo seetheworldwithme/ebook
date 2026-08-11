@@ -45,4 +45,10 @@ sealed interface ReaderNavCommand {
 
     /** 跳到任意 Locator（书签 / 批注跳回原文；跳转前 VM 已 push 当前位置到 history）。 */
     data class GoToLocator(val locator: Locator) : ReaderNavCommand
+
+    /** 点击右边缘翻下一页（READ-03）：navigator.goForward。 */
+    data object GoForward : ReaderNavCommand
+
+    /** 点击左边缘翻上一页（READ-03）：navigator.goBackward。 */
+    data object GoBackward : ReaderNavCommand
 }
