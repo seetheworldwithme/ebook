@@ -1,21 +1,29 @@
 package com.xuziyue.ebook.reader
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Tune
@@ -30,6 +38,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,13 +57,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
+import org.readium.r2.shared.publication.Link
 
 /**
  * Reader 主界面（Compose）。
  *
  * - [AndroidFragment] 托管 [ReaderFragment]（Compose↔Readium 桥接的核心）。
  * - VM 绑 Activity scope（与 ReaderFragment 的 activityViewModels 共享同一实例）。
- * - 顶栏：返回 + 进度。
+ * - 顶栏：返回 + 目录 + 返回上一位置 + 进度（点开拖动浮层）。READ-02。
  * - 底栏：字号±、排版入口（开 [TypographySheet]）、高亮计数/清。主题与排版全维度在 sheet 内。
  * - [isSystemInDarkTheme] 推入 VM（[ReaderViewModel.setSystemDark]），用于解析 [ReaderTheme.SYSTEM]。
  *
@@ -81,20 +91,29 @@ fun ReaderScreen(
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val progressText by viewModel.progressText.collectAsStateWithLifecycle()
+    val progression by viewModel.progression.collectAsStateWithLifecycle()
+    val tableOfContents by viewModel.tableOfContents.collectAsStateWithLifecycle()
+    val canGoBack by viewModel.canGoBack.collectAsStateWithLifecycle()
     val decorations by viewModel.decorations.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val typography by viewModel.typography.collectAsStateWithLifecycle()
 
     var showTypography by remember { mutableStateOf(false) }
+    var showToc by remember { mutableStateOf(false) }
+    var showProgress by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
         AndroidFragment<ReaderFragment>(modifier = Modifier.fillMaxSize())
 
-        // 顶部控制条
+        // 顶部控制条（READ-02：目录 / 返回上一位置 / 进度入口）
         ReaderTopBar(
-            progress = progressText,
+            progressText = progressText,
+            canGoBack = canGoBack,
             onBack = onBack,
+            onOpenToc = { showToc = true },
+            onGoBack = { viewModel.goBack() },
+            onOpenProgress = { showProgress = true },
             modifier = Modifier.align(Alignment.TopCenter),
         )
 
@@ -121,6 +140,24 @@ fun ReaderScreen(
                 onTextAlign = { viewModel.setTextAlign(it) },
                 onTheme = { viewModel.setTheme(it) },
                 onFontFamily = { viewModel.setFontFamily(it) },
+            )
+        }
+
+        // 目录面板（READ-02：章节列表 + 跳转）
+        if (showToc) {
+            TocSheet(
+                items = tableOfContents,
+                onJump = { link -> viewModel.jumpToLink(link); showToc = false },
+                onDismiss = { showToc = false },
+            )
+        }
+
+        // 进度拖动面板（READ-02：点「进度 N%」展开，Slider + ◄ ► 微调）
+        if (showProgress) {
+            ProgressSheet(
+                progression = progression,
+                onJump = { viewModel.jumpToProgression(it) },
+                onDismiss = { showProgress = false },
             )
         }
 
@@ -151,20 +188,41 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun ReaderTopBar(progress: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
+private fun ReaderTopBar(
+    progressText: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+    onOpenToc: () -> Unit,
+    onGoBack: () -> Unit,
+    onOpenProgress: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回书库")
+                }
+                IconButton(onClick = onOpenToc) {
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录")
+                }
+                // READ-02：目录/进度跳转后可返回上一阅读位置（无历史时隐藏）。
+                if (canGoBack) {
+                    IconButton(onClick = onGoBack) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "返回上一阅读位置")
+                    }
+                }
             }
-            Spacer(Modifier.width(8.dp))
-            Text("进度 $progress", style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onOpenProgress) {
+                Text("进度 $progressText", style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }
@@ -201,6 +259,104 @@ private fun ReaderBottomBar(
             if (canHighlight) {
                 Text("高亮 $highlightCount", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = onClearHighlights) { Text("清") }
+            }
+        }
+    }
+}
+
+/**
+ * 目录面板（READ-02）。
+ *
+ * 扁平化后的 [TocItem] 列表，按 [TocItem.depth] 缩进；点击 [TocItem.link] 跳转并关闭。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TocSheet(
+    items: List<TocItem>,
+    onJump: (Link) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Text(
+            "目录",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+        if (items.isEmpty()) {
+            Text(
+                "本书没有目录",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+                itemsIndexed(items, key = { i, _ -> i }) { _, toc ->
+                    Text(
+                        toc.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJump(toc.link) }
+                            .padding(start = (24 + toc.depth * 16).dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 进度拖动面板（READ-02）。
+ *
+ * 点顶栏「进度 N%」展开。Slider 本地 state 跟手（`remember(progression)` 同步外部进度），
+ * 松手（onValueChangeFinished）跳转一次；◄ ► 微调 ±1% 立即跳转。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProgressSheet(
+    progression: Double,
+    onJump: (Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+            Text("跳转进度", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            var local by remember(progression) { mutableStateOf(progression.toFloat()) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = {
+                    local = (local - 0.01f).coerceAtLeast(0f)
+                    onJump(local.toDouble())
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "后退 1%")
+                }
+                Slider(
+                    value = local,
+                    onValueChange = { local = it },
+                    onValueChangeFinished = { onJump(local.toDouble()) },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = {
+                    local = (local + 0.01f).coerceAtMost(1f)
+                    onJump(local.toDouble())
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "前进 1%")
+                }
+            }
+            Text(
+                "${(local * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.padding(top = 12.dp)) {
+                Text("关闭")
             }
         }
     }

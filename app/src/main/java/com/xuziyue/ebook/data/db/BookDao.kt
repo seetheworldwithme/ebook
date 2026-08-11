@@ -33,6 +33,26 @@ interface BookDao {
     )
     fun observeAll(): Flow<List<BookEntity>>
 
+    /**
+     * 书库列表（带进度 + 搜索，LIB-01 / LIB-03）。
+     *
+     * - LEFT JOIN reading_progress 取 progression（无进度 = null 未读）；一次查询拿全书库进度条。
+     * - [query] 空串 = 全量；否则按书名 / 作者 LIKE 子串匹配。authors 是 JSON 数组串，
+     *   `LIKE '%作者%'` 能命中其中任一作者。SQLite LIKE 对 ASCII 大小写不敏感、中文直接匹配
+     *   （满足「搜索忽略大小写；中文书名可直接匹配」）。
+     * - 排序基准同 [observeAll]（最近阅读 / 导入），其它排序在应用层内存排序（见 [com.xuziyue.ebook.library.sortItems]）。
+     */
+    @Query(
+        """
+        SELECT b.*, rp.progression AS progress
+        FROM books b
+        LEFT JOIN reading_progress rp ON rp.bookId = b.id
+        WHERE :query = '' OR b.title LIKE '%' || :query || '%' OR b.authors LIKE '%' || :query || '%'
+        ORDER BY b.lastOpenedAt IS NULL, b.lastOpenedAt DESC, b.importedAt DESC
+        """,
+    )
+    fun observeLibraryItems(query: String): Flow<List<LibraryItemEntity>>
+
     /** 打开时一次写最近阅读时间 + 状态（READ-01/READ-08）。 */
     @Query("UPDATE books SET lastOpenedAt = :time, status = :status WHERE id = :id")
     suspend fun touchOpened(id: String, time: Long, status: ReadingStatus)

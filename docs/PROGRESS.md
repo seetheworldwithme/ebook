@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 7 | 1 |
+| P0（MVP 必做） | 28 | 7 | 3 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 0 | 0 |
 
-> 当前进度：7 / 42（刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 真机回归通过转 ✅；LIB-01 🚧 列表雏形验过、完整网格/封面/进度留刀2-C；单测 81 + 编译 + lint + 真机全绿。详见文末变更记录）。
+> 当前进度：7 ✅ / 3 🚧（刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 真机回归转 ✅；刀2-B/C READ-02 + LIB-01/03 代码完成、单测 106 + 编译 + lint 全绿、🚧 待真机转 ✅）。详见文末变更记录。
 
 ---
 
@@ -57,9 +57,9 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| LIB-01 | 🚧 | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅）。刀1：最简书名列表真机回归验过（导入入库+可见+点击打开）；网格/封面/进度/排序留刀2-C |
+| LIB-01 | 🚧 | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅）。刀2-C：完整列表（默认）+ 网格切换 + Coil 封面 + 进度条(LEFT JOIN progression) + 最近阅读相对时间；刀1 列表雏形已真机验，刀2-C 完整版待真机 |
 | LIB-02 | ⬜ | 最近阅读、全部、已读完三个入口 |
-| LIB-03 | ⬜ | 按书名 / 作者搜索，按最近阅读 / 导入时间 / 书名排序 |
+| LIB-03 | 🚧 | 按书名 / 作者搜索，按最近阅读 / 导入时间 / 书名排序。刀2-C：DAO LIKE 搜索（忽略大小写 + 中文直匹配）+ 排序 DropdownMenu（内存 sortItems 纯函数）；单测 + 编译 + lint 绿，待真机 |
 | LIB-04 | ⬜ | 书籍详情页（元数据、进度、文件信息、批注数量、继续阅读） |
 
 ### 阅读器通用能力（READ）
@@ -67,7 +67,7 @@
 | ID | 状态 | 需求 |
 | --- | --- | --- |
 | READ-01 | ✅ | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator）。刀1：ReadingProgress(Room) 替代 LocatorStore；真机回归强杀+冷启 16%→16% 恢复通过 |
-| READ-02 | ⬜ | 目录、章节跳转、当前位置百分比、进度拖动 |
+| READ-02 | 🚧 | 目录、章节跳转、当前位置百分比、进度拖动。刀2-B：目录 sheet（publication.tableOfContents 扁平化 + depth 缩进）+ 点进度展开 Slider 浮层（locateProgression → go）+ history 返回上一位置；单测 + 编译 + lint 绿，待真机 |
 | READ-03 | ⬜ | 点击区域、左右滑动、音量键翻页（音量键可关闭） |
 | READ-04 | ⬜ | 分页与纵向滚动两种模式 |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
@@ -166,6 +166,12 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**刀2-B/C 代码完成：READ-02（目录+进度拖动）+ LIB-01 完整书库 + LIB-03 搜索排序，三项 🚧 待真机转 ✅。代码 + 单测 + 编译 + lint 全绿，未真机回归。**
+> **刀2-B（READ-02）**：① **跳转指令流**——`ReaderNavCommand`（GoToLink/GoToProgression/GoBack sealed）+ VM `Channel(BUFFERED).receiveAsFlow()`，ReaderFragment `bindNavigatorObservers` 加 collect 执行（沿用 preferences/decorations「VM 出事件 → Fragment 执行」范式，navigator 与 publication 分居 Fragment/VM 解耦）。② **目录**——`publication.tableOfContents` 经 `flattenTableOfContents`（递归 children → depth）扁平化成 `TocItem`，TocSheet 按 depth 缩进，点击 `navigator.go(link)`。③ **进度拖动**——`publication.locateProgression(progress)`（suspend 扩展，LocatorServiceKt，javap 验证）→ `navigator.go(locator)`；ProgressSheet（点顶栏「进度 N%」展开——徐先生选的浮层交互）Slider 本地 state 跟手松手跳转 + ◄ ► 微调 ±1%；`progression` StateFlow 派生自 Locator.totalProgression。④ **返回上一位置**——Navigator 无 history（goForward/goBackward 是翻页），VM 自管 `ArrayDeque<Locator>` jumpHistory（深度封顶 20），jumpToLink/jumpToProgression 前 push latestLocator、goBack pop；`canGoBack` gating 顶栏「返回」按钮可见。
+> **刀2-C（LIB-01/03）**：⑤ **数据层**——`ReadingProgressEntity.progression` 冗余列（刀1 已预留注释「书库进度条一次查询拿全」）正用上：`BookDao.observeLibraryItems(query)` LEFT JOIN reading_progress + LIKE 搜索（`title/authors LIKE '%kw%'`，authors JSON 子串命中，SQLite 大小写不敏感 + 中文直匹配）；`LibraryItemEntity(@Embedded book + progress)` + `LibraryItem(book, progression)` domain。⑥ **LibraryViewModel**——query/sort/viewMode StateFlow，`combine(query.flatMapLatest{repo.observeLibraryItems}, sort){ sortItems }`；排序抽纯函数 `sortItems`（LAST_OPENED 未读末尾 / IMPORTED / TITLE 大小写不敏感，5000 条内存排序 <5ms）；viewMode/sort 本刀内存态（保位留优化）。⑦ **UI**——LibraryScreen 重写：**列表（默认，徐先生选）**横向卡（Coil `AsyncImage(File(coverPath))` 加载 covers/{bookId}.png + LinearProgressIndicator + 相对时间）+ **网格**（LazyVerticalGrid 2 列封面墙）切换 + 搜索框 + 排序 DropdownMenu（当前项 ✓）；Coil 3.5.0 刀1 已自配（无新依赖）；封面缺失 → surfaceVariant 占位 + 书名首字；`relativeTime`（刚刚/N分钟前/.../yyyy/M/d）。
+> **测试**：`:core:model` **12**（+LibraryItem 3）/ `:reader:readium` **42**（回归）/ `:app` **52**（+RelativeTime 8 + TocFlatten 4 + BookDao +5 + SortItems 5）= **106 单测全绿**（0 fail 0 error 0 skip）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（ArrowBack / KeyboardArrow* 全改 AutoMirrored，icon deprecated warning 清零；仅剩既有 @ApplicationContext KT-73255）。
+> **踩坑**：① **Readium Kotlin 绑定 companion invoke 返回平台可空**——`Url("x")`/`Href("x")` 返回 `Url?`/`Href?`，TocFlattenTest 构造 Link 需 `Href(href)!!`（Link/Href/Url 依赖 android.net.Uri，单测放 app 用 Robolectric sdk=34，同 TypographyMappingsTest 范式）；② **Modifier.padding 不能混用 start/end 与 vertical**（TocSheet 目录项首版 `padding(start=,end=,vertical=)` 编译错）→ 改显式 top/bottom；③ **RelativeTime 未来时间 bug**——单测抓到 `diff<0` 会先命中 `diff<MINUTE` 返回「刚刚」而非空串，加 `if(diff<0)return""` 前置修复；④ **@Embedded 套带 TypeConverter 的 BookEntity**——Room Database 级 converter 对 @Embedded 字段生效（authors List 往返），DAO JOIN 测试验证。**仅单测 + 编译 + lint，未真机回归**——READ-02 / LIB-01 / LIB-03 维持 🚧，待徐先生真机连机验「① 目录 sheet 章节跳转 + 返回上一位置 ② 点进度展开 Slider 拖动/微调跳转 ③ 书库列表封面/进度/相对时间 + 网格切换 + 搜索过滤 + 排序切换 ④ 杀重启进度不丢」后转 ✅。
 
 > 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 转 ✅（LIB-01 维持 🚧 待完整网格/封面）。** 自动化验：冷启动不崩、导入 Alice+翻页+强杀恢复 16%（READ-01/08 Locator 闭环）、字号 130% 杀重启保位（TYPE-01 DataStore）、夜间主题实时+杀重启保位（TYPE-02）。徐先生手指验：SAF 导入外部 EPUB/TXT（中文不乱码）、跟随系统（系统暗色切换正文跟随）、夜间无白屏闪烁、高亮（长按选中→ActionMode→变黄+计数）、slider 拖动跟手。**抓到并修复 1 个真 bug**：排版面板主题 4 按钮（跟随系统/日间/米黄/夜间）单行 Row 放不下、「夜间」被挤出屏外不可见（uiautomator dump 缺「夜间」诊断）→ OptionGroup `Row`→`FlowRow` 自动换行修复，重编译装验夜间按钮可见 + 实时 + 保位。**logcat 干净**：crash buffer 空、无 FATAL、无 Readium Error、无 OOM/ANR；唯一 `hiddenapi AccessibilityNodeInfo.getSelection/setSelection denied`（E 级，Readium classes13.dex，targetSdk 36 + Android 16 文本选择可访问性 API 被拦）——徐先生实测高亮正常、Readium 降级不影响功能，记为库已知行为（REL-06 无障碍时复核 TalkBack 选区播报）。**字重 UI 推后**（数据层+映射就绪，TYPE-01 其余 6 维度 + 保位真机验过，字重 slider 留 TYPE-05 自定义字体一并）。**测试证据**：81 单测 + assembleDebug + lintDebug 全绿 + 真机 6 组截图 + logcat 无错。
 

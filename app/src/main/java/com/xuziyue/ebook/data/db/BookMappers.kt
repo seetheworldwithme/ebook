@@ -1,6 +1,7 @@
 package com.xuziyue.ebook.data.db
 
 import com.xuziyue.ebook.model.Book
+import com.xuziyue.ebook.model.LibraryItem
 
 /**
  * Entity ↔ domain 映射（持久化关注点，放 :app/data/db，不污染 :core:model）。
@@ -39,4 +40,10 @@ fun Book.toEntity(): BookEntity = BookEntity(
     importedAt = importedAt,
     lastOpenedAt = lastOpenedAt,
     status = status,
+)
+
+/** [LibraryItemEntity] → domain [LibraryItem]（书库列表查询结果，LIB-01）。 */
+fun LibraryItemEntity.toDomain(): LibraryItem = LibraryItem(
+    book = book.toDomain(),
+    progression = progression,
 )

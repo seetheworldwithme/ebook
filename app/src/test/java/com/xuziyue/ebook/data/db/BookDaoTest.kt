@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +23,7 @@ class BookDaoTest {
 
     private lateinit var db: BookDatabase
     private lateinit var dao: BookDao
+    private lateinit var progressDao: ReadingProgressDao
 
     @Before
     fun setUp() {
@@ -30,6 +32,7 @@ class BookDaoTest {
             BookDatabase::class.java,
         ).allowMainThreadQueries().build()
         dao = db.bookDao()
+        progressDao = db.readingProgressDao()
     }
 
     @After
@@ -94,5 +97,47 @@ class BookDaoTest {
     fun `status 经 TypeConverter name 往返`() = runTest {
         dao.insert(book(status = ReadingStatus.FINISHED))
         assertEquals(ReadingStatus.FINISHED, dao.getById("book-1")!!.status)
+    }
+
+    // ===== observeLibraryItems（LIB-01 进度 JOIN + LIB-03 搜索）=====
+
+    @Test
+    fun `observeLibraryItems LEFT JOIN 进度，无进度为 null`() = runTest {
+        dao.insert(book(id = "a", hash = "ha"))
+        dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L))
+        progressDao.upsert(ReadingProgressEntity("b", "loc", 0.65, 1L, null))
+        val items = dao.observeLibraryItems("").first()
+        assertEquals(2, items.size)
+        assertEquals(0.65, items.first { it.book.id == "b" }.progression!!, 0.0001)
+        assertNull(items.first { it.book.id == "a" }.progression)
+    }
+
+    @Test
+    fun `observeLibraryItems 按书名子串搜索`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", title = "山海经"))
+        dao.insert(book(id = "b", hash = "hb", title = "红楼梦"))
+        assertEquals(listOf("a"), dao.observeLibraryItems("山海").first().map { it.book.id })
+    }
+
+    @Test
+    fun `observeLibraryItems 按 authors JSON 子串搜索`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", authors = listOf("曹雪芹", "高鹗")))
+        dao.insert(book(id = "b", hash = "hb", authors = listOf("吴承恩")))
+        assertEquals(listOf("a"), dao.observeLibraryItems("曹雪").first().map { it.book.id })
+    }
+
+    @Test
+    fun `observeLibraryItems 搜索忽略 ASCII 大小写`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", title = "Alice"))
+        dao.insert(book(id = "b", hash = "hb", title = "Bob"))
+        assertEquals(listOf("a"), dao.observeLibraryItems("alice").first().map { it.book.id })
+    }
+
+    @Test
+    fun `observeLibraryItems 空查询返回全部并保持最近阅读排序`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", lastOpenedAt = null, importedAt = 3000L))
+        dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L))
+        dao.insert(book(id = "c", hash = "hc", lastOpenedAt = 1000L))
+        assertEquals(listOf("b", "c", "a"), dao.observeLibraryItems("").first().map { it.book.id })
     }
 }

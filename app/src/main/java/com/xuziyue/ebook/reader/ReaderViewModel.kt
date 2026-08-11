@@ -20,12 +20,15 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.Decoration
@@ -33,6 +36,7 @@ import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
 import java.io.File
@@ -99,6 +103,23 @@ class ReaderViewModel @Inject constructor(
     private val _capabilities = MutableStateFlow(ReaderCapabilities.forEpub())
     val capabilities: StateFlow<ReaderCapabilities> = _capabilities.asStateFlow()
 
+    /** 目录（READ-02）：openPublication 成功时从 publication.tableOfContents 扁平化（含嵌套 depth）。 */
+    private val _tableOfContents = MutableStateFlow<List<TocItem>>(emptyList())
+    val tableOfContents: StateFlow<List<TocItem>> = _tableOfContents.asStateFlow()
+
+    /** 全书进度浮点（0.0..1.0，供进度拖动 Slider，派生自 Locator.totalProgression）。 */
+    private val _progression = MutableStateFlow(0.0)
+    val progression: StateFlow<Double> = _progression.asStateFlow()
+
+    /** 跳转指令流（VM 发出 → ReaderFragment 执行 navigator 调用，READ-02）。 */
+    private val _navCommands = Channel<ReaderNavCommand>(Channel.BUFFERED)
+    val navCommands: Flow<ReaderNavCommand> = _navCommands.receiveAsFlow()
+
+    /** 跳转历史栈（READ-02：目录/进度跳转后可返回上一位置；Navigator 无 history，应用层自管）。 */
+    private val jumpHistory = ArrayDeque<Locator>()
+    private val _canGoBack = MutableStateFlow(false)
+    val canGoBack: StateFlow<Boolean> = _canGoBack.asStateFlow()
+
     private var currentBookId: String? = null
     private var latestLocator: Locator? = null
     private var persistJob: Job? = null
@@ -119,6 +140,10 @@ class ReaderViewModel @Inject constructor(
     private fun openPublication(bookId: String) {
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
+            // 切书重置跳转状态（目录 / 历史 / 进度）
+            _tableOfContents.value = emptyList()
+            jumpHistory.clear()
+            _canGoBack.value = false
 
             val book = bookRepository.getById(bookId) ?: run {
                 _uiState.value = ReaderUiState.Error("书籍不存在：$bookId")
@@ -137,6 +162,8 @@ class ReaderViewModel @Inject constructor(
                 .onSuccess { publication ->
                     // 能力来自打开后的 Publication（conformsTo + isSearchable），非扩展名（红线 #2）。
                     _capabilities.value = publication.toReaderCapabilities()
+                    // 扁平化目录（含嵌套 children → depth 缩进）
+                    _tableOfContents.value = flattenTableOfContents(publication.tableOfContents)
                     val savedLocator = progressRepository.getLocator(bookId) // Room 替代 LocatorStore
                     bookRepository.markOpened(bookId) // lastOpenedAt + status=READING
                     val factory = EpubNavigatorFactory(publication)
@@ -159,8 +186,9 @@ class ReaderViewModel @Inject constructor(
     /** 由 ReaderFragment 订阅 navigator.currentLocator 后转发到此。 */
     fun onLocatorUpdated(locator: Locator) {
         latestLocator = locator
-        val pct = ((locator.locations.totalProgression ?: 0.0) * 100).toInt()
-        _progressText.value = "$pct%"
+        val prog = locator.locations.totalProgression ?: 0.0
+        _progressText.value = "${(prog * 100).toInt()}%"
+        _progression.value = prog
         persistJob?.cancel()
         persistJob = viewModelScope.launch {
             delay(PERSIST_DEBOUNCE_MS)
@@ -244,6 +272,34 @@ class ReaderViewModel @Inject constructor(
         _decorations.value = emptyList()
     }
 
+    // ===== 目录 / 进度跳转（READ-02）=====
+
+    /** 跳到目录章节：先记当前位置到 history（可返回），再发指令。 */
+    fun jumpToLink(link: Link) {
+        pushHistory()
+        _navCommands.trySend(ReaderNavCommand.GoToLink(link))
+    }
+
+    /** 拖动到全书进度（0.0..1.0）：先记位置再发指令。 */
+    fun jumpToProgression(progress: Double) {
+        pushHistory()
+        _navCommands.trySend(ReaderNavCommand.GoToProgression(progress.coerceIn(0.0, 1.0)))
+    }
+
+    /** 返回上一阅读位置（READ-02：跳转后可返回上一个阅读位置）。 */
+    fun goBack() {
+        val from = jumpHistory.removeLastOrNull() ?: return
+        _canGoBack.value = jumpHistory.isNotEmpty()
+        _navCommands.trySend(ReaderNavCommand.GoBack(from))
+    }
+
+    private fun pushHistory() {
+        val current = latestLocator ?: return
+        jumpHistory.addLast(current)
+        while (jumpHistory.size > HISTORY_MAX) jumpHistory.removeFirst()
+        _canGoBack.value = true
+    }
+
     // ===== EpubNavigatorFragment.Listener =====
 
     override fun onExternalLinkActivated(url: AbsoluteUrl) {
@@ -263,6 +319,8 @@ class ReaderViewModel @Inject constructor(
 
     private companion object {
         const val PERSIST_DEBOUNCE_MS = 1500L
+        /** 跳转 history 最大深度（防内存膨胀）。 */
+        const val HISTORY_MAX = 20
         // 排版数值范围（UI 滑块同此；null = 引擎默认，coerce 仅约束显式设置的值）。
         const val FONT_SIZE_MIN = 0.5
         const val FONT_SIZE_MAX = 5.0

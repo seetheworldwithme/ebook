@@ -18,6 +18,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
+import org.readium.r2.shared.publication.services.locateProgression
 
 /**
  * Reader 的 Fragment 宿主（命门：Compose↔Readium 桥接）。
@@ -123,6 +124,22 @@ class ReaderFragment : Fragment() {
                 launch { viewModel.preferences.collect { nav.submitPreferences(it) } }
                 // decorations → applyDecorations（高亮渲染，声明整组完整状态）
                 launch { viewModel.decorations.collect { nav.applyDecorations(it, DECORATION_GROUP) } }
+                // navCommands → 执行目录 / 进度 / 返回跳转（READ-02）
+                launch {
+                    viewModel.navCommands.collect { cmd ->
+                        val target = navigator ?: return@collect
+                        when (cmd) {
+                            is ReaderNavCommand.GoToLink -> target.go(cmd.link, animated = false)
+                            is ReaderNavCommand.GoToProgression -> {
+                                val pub = (viewModel.uiState.value as? ReaderUiState.Ready)?.publication
+                                    ?: return@collect
+                                val locator = pub.locateProgression(cmd.progress) ?: return@collect
+                                target.go(locator, animated = false)
+                            }
+                            is ReaderNavCommand.GoBack -> target.go(cmd.locator, animated = false)
+                        }
+                    }
+                }
             }
         }
     }
