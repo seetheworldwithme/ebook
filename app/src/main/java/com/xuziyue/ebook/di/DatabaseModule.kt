@@ -8,6 +8,7 @@ import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.data.ReadingProgressRepository
+import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookDatabase
 import com.xuziyue.ebook.data.db.MIGRATION_1_2
@@ -76,4 +77,14 @@ object DatabaseModule {
         repo: BookRepository,
         @ApplicationContext context: Context,
     ): ImportBookUseCase = ImportBookUseCase(importer, extractor, repo, context)
+
+    @Provides
+    @Singleton
+    fun provideExportBookDataUseCase(
+        bookDao: BookDao,
+        annotationDao: AnnotationDao,
+        bookmarkDao: BookmarkDao,
+        progressDao: ReadingProgressDao,
+        @ApplicationContext context: Context,
+    ): ExportBookDataUseCase = ExportBookDataUseCase(bookDao, annotationDao, bookmarkDao, progressDao, context)
 }

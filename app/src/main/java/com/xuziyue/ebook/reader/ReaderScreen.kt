@@ -1,5 +1,8 @@
 package com.xuziyue.ebook.reader
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,6 +72,7 @@ import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
@@ -119,12 +123,37 @@ fun ReaderScreen(
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val annotations by viewModel.annotations.collectAsStateWithLifecycle()
 
+    // DATA-01 导出：SAF CreateDocument（MD/JSON 各一 launcher）+ 结果 Toast 反馈。
+    val context = LocalContext.current
+    val defaultFileName: (String) -> String = { suffix ->
+        val title = (uiState as? ReaderUiState.Ready)?.publication?.metadata?.title
+        val base = title?.replace(Regex("[/\\\\:*?\"<>|]"), "_")?.take(60)?.ifBlank { bookId } ?: bookId
+        "$base.$suffix"
+    }
+    val mdLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/markdown"),
+    ) { uri -> uri?.let { viewModel.exportBook(ExportBookDataUseCase.Format.MARKDOWN, it) } }
+    val jsonLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let { viewModel.exportBook(ExportBookDataUseCase.Format.JSON, it) } }
+    LaunchedEffect(Unit) {
+        viewModel.exportEvents.collect { outcome ->
+            val msg = when (outcome) {
+                is ExportBookDataUseCase.Outcome.Success ->
+                    "已导出 ${outcome.items} 条（${if (outcome.format == ExportBookDataUseCase.Format.JSON) "JSON" else "Markdown"}）"
+                is ExportBookDataUseCase.Outcome.Failed -> outcome.message
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
     var showTypography by remember { mutableStateOf(false) }
     var showToc by remember { mutableStateOf(false) }
     var showProgress by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
     var showAnnotations by remember { mutableStateOf(false) }
     var editingAnnotation by remember { mutableStateOf<AnnotationItem?>(null) }
+    var showExportFormat by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
@@ -211,8 +240,30 @@ fun ReaderScreen(
                 onEdit = { editingAnnotation = it },
                 onDelete = { viewModel.removeAnnotation(it.id) },
                 onColorChange = { item, color -> viewModel.updateAnnotationColor(item.id, color) },
+                onExport = { showExportFormat = true },
                 onClearAll = { viewModel.clearHighlights(); showAnnotations = false },
                 onDismiss = { showAnnotations = false },
+            )
+        }
+
+        // 导出格式选择（DATA-01：Markdown / JSON）
+        if (showExportFormat) {
+            AlertDialog(
+                onDismissRequest = { showExportFormat = false },
+                title = { Text("导出批注") },
+                text = { Text("选择导出格式") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showExportFormat = false
+                        mdLauncher.launch(defaultFileName("md"))
+                    }) { Text("Markdown") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showExportFormat = false
+                        jsonLauncher.launch(defaultFileName("json"))
+                    }) { Text("JSON") }
+                },
             )
         }
 
@@ -723,6 +774,7 @@ private fun AnnotationSheet(
     onEdit: (AnnotationItem) -> Unit,
     onDelete: (AnnotationItem) -> Unit,
     onColorChange: (AnnotationItem, HighlightColor) -> Unit,
+    onExport: () -> Unit,
     onClearAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -735,8 +787,11 @@ private fun AnnotationSheet(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("笔记 / 高亮", style = MaterialTheme.typography.titleMedium)
-            if (items.isNotEmpty()) {
-                TextButton(onClick = onClearAll) { Text("清空") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onExport) { Text("导出") }
+                if (items.isNotEmpty()) {
+                    TextButton(onClick = onClearAll) { Text("清空") }
+                }
             }
         }
         if (items.isEmpty()) {

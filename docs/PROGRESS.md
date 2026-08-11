@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 13 | 0 |
+| P0（MVP 必做） | 28 | 14 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 13 | 0 |
+| 合计 | 42 | 14 | 0 |
 
-> 当前进度：13 ✅ / 0 🚧（第一切片 11 项全真机转 ✅ + READ-06 书签真机转 ✅ + READ-07 高亮/笔记/复制/分享/调色板转 ✅；复制/分享/调色板仅单测+编译通过，真机回归待补）。详见文末变更记录。
+> 当前进度：14 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 + DATA-01 转 ✅；READ-07 复制/分享/调色板 + DATA-01 导出仅单测+编译通过，真机回归待补）。详见文末变更记录。
 
 ---
 
@@ -88,7 +88,7 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| DATA-01 | ⬜ | 导出单本书书签 / 高亮 / 笔记为 Markdown / JSON（含 schema 版本 + Locator + 时间戳） |
+| DATA-01 | ✅ | 导出单本书书签 / 高亮 / 笔记为 Markdown / JSON（含 schema 版本 + Locator + 时间戳）。刀 DATA-01：ExportBookDataUseCase（4 DAO 聚合 + kotlinx @Serializable DTO + MD/JSON 双序列化 + SAF CreateDocument 临时文件原子写）；入口在笔记 sheet 标题行「导出」→ 格式弹窗 → SAF；schemaVersion=1（独立于 PersistedLocator 内层）；仅单测+编译，真机回归待补 |
 | DATA-02 | ⬜ | 本地数据库自动迁移（升级不丢书库 / 进度 / 批注，有迁移测试） |
 
 ### 设置、无障碍与隐私（SET）
@@ -166,6 +166,14 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**DATA-01 导出转 ✅：单本书书签+高亮+笔记(+进度) → Markdown/JSON。仅单测+编译+lint 全绿，真机回归待补。** 批注能导出才真正「属于自己」，趁字段口径在 READ-07 稳定后衔接。
+> **数据层（新建 `data/export/` 包）**：① `ExportBookDataUseCase`（注入 4 DAO 跨表聚合原始持久化态——Repository observe 丢原始 locatorJson 返回反序列化 Locator，导出需原文+全时间戳，故直接用 DAO，类 ImportBookUseCase 跨数据源；`snapshotForBook` suspend 非响应式与 observe 同过滤，纯新增 @Query 不改 schema 无 migration）；② `ExportDtos`（@Serializable DTO，顶层 `EXPORT_SCHEMA_VERSION=1` **独立于** PersistedLocator 内层 Locator schema 版本；locator 字段 `JsonElement` 经 `Json.parseToJsonElement(rawLocatorJson)` 原样保留 PersistedLocator 包装含其嵌套 schemaVersion；color 存 HighlightColor.name 字符串避免跨 core/model 模块 serialization plugin 依赖）；③ `ExportSerializers`（toJson = kotlinx `prettyPrint + encodeDefaults` / toMarkdown = buildString 手拼人可读，时间戳本地格式化）。
+> **写文件（红线 #6 / design.md §7）**：SAF `ActivityResultContracts.CreateDocument`（MD/JSON 各一 launcher，mimeType `text/markdown`/`application/json` 区分）→ 临时文件 `cacheDir/export.tmp` 写完整 → `openOutputStream(uri)` 一次性 copy → 删临时；SAF 目标 URI 不支持 rename，临时中转保证生成失败不污染目标位置。
+> **UI 入口（徐先生定：笔记 sheet 标题行）**：`AnnotationSheet` 标题行加「导出」TextButton（恒显，与「清空」并列）→ `AlertDialog` Markdown/JSON 二选一 → 对应 launcher.launch(defaultFileName)；`ReaderViewModel.exportBook(format,uri)` + `exportEvents: Channel<Outcome>` → ReaderScreen `LaunchedEffect` collect → Toast（成功带条数 / 失败带 message）；默认文件名取 `publication.metadata.title`（Regex sanitize 非法字符 + take 60）兜底 bookId。
+> **错误处理（CLAUDE.md：可理解提示）**：书不存在→Failed；三件套+进度全空→Failed("还没有书签/高亮/笔记可导出")；损坏 locatorJson 的批注/书签跳过（parseLocator 只接受 JsonObject）；写入 IO 失败→Failed("写入失败：…")。
+> **测试（新增 8，全绿）**：ExportSerializersTest 3（JSON 顶层 schemaVersion/书籍字段 + locator 嵌套保留 PersistedLocator schemaVersion + Markdown 含书名/高亮/笔记）；ExportBookDataUseCaseTest 5（Robolectric + in-memory Room + `Uri.fromFile` 端到端验写入：书不存在 / 全空 Failed / JSON 含高亮文字 / Markdown 含书名 / 损坏 locatorJson 批注被跳过）。`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL。**踩坑**：① `kotlinx.serialization.json.contains` import 误写（不存在符号）→ JsonObject 是 Map 用 `containsKey`；② `Json.parseToJsonElement("not-json")` 不抛异常而返回 primitive（非预期）→ parseLocator 加 `is JsonObject` 类型守卫，只接受对象格式的 PersistedLocator，损坏记录跳过。
+> **仅单测+编译+lint，未真机回归**——待真机验「① 笔记 sheet→导出→Markdown/JSON 各存一份 ② 用别的 app 打开确认人可读 / 结构含 schemaVersion+locator ③ 空数据 Toast 提示 ④ 杀重启后导出仍正常」兜底（功能已转 ✅）。
 
 > 实现状态（2026-08-11）：**READ-07 收尾转 ✅：选中菜单「复制」/「分享」+ 高亮四色调色板。仅单测+编译+lint 全绿，真机回归待补。** 补齐 READ-07 剩余口径（上一刀 🚧 留的两件）：
 > **① 复制 / 系统分享（canCopyShare 首次消费，红线 #2）**：`ReaderFragment` ActionMode `onCreateActionMode` 在「高亮」之外，按 `capabilities.canCopyShare`（EPUB=true / PDF=false，字段早已建但 UI 零引用）gating 加「复制」「分享」两项（`MENU_COPY_ID=2 / MENU_SHARE_ID=3`）；`onActionItemClicked` 取 `navigator.currentSelection().locator.text.highlight`（与 addHighlight 同口径）→ 复制走 `ClipboardManager.setPrimaryClip(ClipData.newPlainText)`、分享走 `Intent.ACTION_SEND + createChooser`；空选区不操作。

@@ -2,6 +2,7 @@ package com.xuziyue.ebook.reader
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xuziyue.ebook.data.AnnotationRepository
@@ -9,6 +10,7 @@ import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
+import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderCapabilities
 import com.xuziyue.ebook.model.ReaderScrollMode
@@ -77,6 +79,7 @@ class ReaderViewModel @Inject constructor(
     private val typographyRepository: ReaderTypographyRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val annotationRepository: AnnotationRepository,
+    private val exportUseCase: ExportBookDataUseCase,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -321,6 +324,20 @@ class ReaderViewModel @Inject constructor(
 
     /** 跳到批注位置（先记当前位置到 history，再发指令）。 */
     fun jumpToAnnotation(item: AnnotationItem) = jumpToLocator(item.locator)
+
+    // ===== 导出（DATA-01：单本书书签+高亮+笔记+进度 → Markdown/JSON，经 SAF 写 URI）=====
+
+    /** 一次性导出结果事件（UI collect 后 Toast 反馈）。 */
+    private val _exportEvents = Channel<ExportBookDataUseCase.Outcome>(Channel.BUFFERED)
+    val exportEvents: Flow<ExportBookDataUseCase.Outcome> = _exportEvents.receiveAsFlow()
+
+    /** 导出当前书为 [format]，写入 SAF 选定的 [uri]。 */
+    fun exportBook(format: ExportBookDataUseCase.Format, uri: Uri) {
+        val bookId = currentBookId ?: return
+        viewModelScope.launch {
+            _exportEvents.trySend(exportUseCase.export(bookId, format, uri))
+        }
+    }
 
     // ===== 书签（READ-06：添加 / 取消 / 列表 / 跳回，重复位置不重复生成）=====
 

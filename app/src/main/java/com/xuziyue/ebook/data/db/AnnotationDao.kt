@@ -28,6 +28,10 @@ interface AnnotationDao {
     @Query("SELECT * FROM annotations WHERE id = :id")
     suspend fun getById(id: String): AnnotationEntity?
 
+    /** 导出快照：同书全部活跃批注（含原始 locatorJson，非响应式，DATA-01 导出用）。 */
+    @Query("SELECT * FROM annotations WHERE bookId = :bookId AND deletedAt IS NULL ORDER BY createdAt DESC")
+    suspend fun snapshotForBook(bookId: String): List<AnnotationEntity>
+
     /** 编辑笔记（覆盖 + 刷新 updatedAt）。 */
     @Query("UPDATE annotations SET note = :note, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateNote(id: String, note: String?, updatedAt: Long)
