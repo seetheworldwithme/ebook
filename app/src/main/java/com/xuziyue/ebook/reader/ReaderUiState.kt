@@ -17,6 +17,8 @@ sealed interface ReaderUiState {
     data object Loading : ReaderUiState
 
     data class Ready(
+        /** 此 Publication 对应的书籍，供 Fragment 判定 Navigator 能否安全复用。 */
+        val bookId: String,
         val publication: Publication,
         val navigatorFactory: EpubNavigatorFactory,
         /** 恢复位置（CLAUDE.md 红线 #1：Locator 为主数据）。null 从头读。 */

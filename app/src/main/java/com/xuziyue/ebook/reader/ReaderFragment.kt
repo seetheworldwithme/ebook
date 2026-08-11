@@ -25,6 +25,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.xuziyue.ebook.R
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.services.locateProgression
@@ -47,6 +48,10 @@ class ReaderFragment : Fragment() {
     private val viewModel: ReaderViewModel by activityViewModels()
 
     private var navigator: EpubNavigatorFragment? = null
+    /** 当前 Navigator 实际绑定的书；不同书绝不复用同一实例。 */
+    private var navigatorBookId: String? = null
+    /** Navigator 更换时取消旧 Locator/偏好/指令订阅，防止迟到回调串书。 */
+    private var navigatorBindingJob: Job? = null
 
     // READ-03：音量键翻页开关（collect viewModel.volumeKeyPaging 后更新，默认开）。interceptor 读它决定是否消费。
     private var volumeKeyPaging = true
@@ -56,14 +61,20 @@ class ReaderFragment : Fragment() {
 
     @OptIn(ExperimentalReadiumApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 参数在 Fragment 恢复 child 之前可用。先切换 VM 到目标书，避免用上一部书的 Ready
+        // 创建/恢复 Navigator；ReaderScreen 不再依赖 composition 后才执行的 LaunchedEffect。
+        arguments?.getString(ARG_BOOK_ID)?.let(viewModel::openBook)
         // 必须在 super.onCreate 前：进程重建时 super.onCreate 用此 factory 恢复 child fragment。
         childFragmentManager.fragmentFactory = when (val state = viewModel.uiState.value) {
-            is ReaderUiState.Ready -> state.navigatorFactory.createFragmentFactory(
-                initialLocator = state.initialLocator,
-                initialPreferences = state.preferences,
-                listener = viewModel,
-                configuration = navigatorConfiguration(),
-            )
+            is ReaderUiState.Ready -> {
+                navigatorBookId = state.bookId
+                state.navigatorFactory.createFragmentFactory(
+                    initialLocator = viewModel.restoreLocatorForNavigator(state),
+                    initialPreferences = state.preferences,
+                    listener = viewModel,
+                    configuration = navigatorConfiguration(),
+                )
+            }
             else -> EpubNavigatorFragment.createDummyFactory()
         }
         super.onCreate(savedInstanceState)
@@ -101,19 +112,24 @@ class ReaderFragment : Fragment() {
 
     @OptIn(ExperimentalReadiumApi::class)
     private fun ensureNavigator(state: ReaderUiState.Ready) {
-        if (navigator != null) return
+        when (navigatorUpdate(navigatorBookId, state.bookId)) {
+            NavigatorUpdate.KEEP -> if (navigator != null) return
+            NavigatorUpdate.REPLACE -> removeExistingNavigator()
+            NavigatorUpdate.CREATE -> Unit
+        }
 
         // 旋转恢复：super.onCreate 已用真实 factory 恢复了 navigator，直接复用。
         val existing = childFragmentManager.findFragmentByTag(NAV_TAG) as? EpubNavigatorFragment
         if (existing != null) {
             navigator = existing
-            bindNavigatorObservers()
+            navigatorBookId = state.bookId
+            bindNavigatorObservers(state.bookId)
             return
         }
 
         // 首次 / 进程重建：dummy 已移除，创建真实 navigator。
         childFragmentManager.fragmentFactory = state.navigatorFactory.createFragmentFactory(
-            initialLocator = state.initialLocator,
+            initialLocator = viewModel.restoreLocatorForNavigator(state),
             initialPreferences = state.preferences,
             listener = viewModel,
             configuration = navigatorConfiguration(),
@@ -122,23 +138,28 @@ class ReaderFragment : Fragment() {
             add(R.id.navigator_container, EpubNavigatorFragment::class.java, null, NAV_TAG)
         }
         navigator = childFragmentManager.findFragmentByTag(NAV_TAG) as? EpubNavigatorFragment
-        bindNavigatorObservers()
+        navigatorBookId = state.bookId
+        bindNavigatorObservers(state.bookId)
     }
 
     private fun removeExistingNavigator() {
+        navigatorBindingJob?.cancel()
+        navigatorBindingJob = null
         childFragmentManager.findFragmentByTag(NAV_TAG)?.let {
             childFragmentManager.commitNow { remove(it) }
         }
         navigator = null
+        navigatorBookId = null
     }
 
     @OptIn(ExperimentalReadiumApi::class)
-    private fun bindNavigatorObservers() {
+    private fun bindNavigatorObservers(bookId: String) {
         val nav = navigator ?: return
-        viewLifecycleOwner.lifecycleScope.launch {
+        navigatorBindingJob?.cancel()
+        navigatorBindingJob = viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // currentLocator → VM（进度 + 防抖落盘）
-                launch { nav.currentLocator.collect { viewModel.onLocatorUpdated(it) } }
+                launch { nav.currentLocator.collect { viewModel.onLocatorUpdated(bookId, it) } }
                 // preferences → submitPreferences（字号/主题实时生效）
                 launch { viewModel.preferences.collect { nav.submitPreferences(it) } }
                 // decorations → applyDecorations（高亮渲染，声明整组完整状态）
@@ -312,12 +333,13 @@ class ReaderFragment : Fragment() {
         viewModel.flushLocator()
     }
 
-    private companion object {
-        const val NAV_TAG = "epub_navigator"
-        const val DECORATION_GROUP = "highlights"
-        const val MENU_HIGHLIGHT_ID = 1
-        const val MENU_COPY_ID = 2
-        const val MENU_SHARE_ID = 3
+    companion object {
+        const val ARG_BOOK_ID = "book_id"
+        private const val NAV_TAG = "epub_navigator"
+        private const val DECORATION_GROUP = "highlights"
+        private const val MENU_HIGHLIGHT_ID = 1
+        private const val MENU_COPY_ID = 2
+        private const val MENU_SHARE_ID = 3
     }
 }
 

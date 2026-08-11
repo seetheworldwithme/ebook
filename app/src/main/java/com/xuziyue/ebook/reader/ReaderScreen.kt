@@ -1,6 +1,7 @@
 package com.xuziyue.ebook.reader
 
 import android.widget.Toast
+import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -117,9 +118,6 @@ fun ReaderScreen(
     val activity = LocalContext.current as ViewModelStoreOwner
     val viewModel: ReaderViewModel = hiltViewModel(viewModelStoreOwner = activity)
 
-    LaunchedEffect(bookId) {
-        viewModel.openBook(bookId)
-    }
     // 跟随系统主题：系统暗色变化时推入 VM，解析 ReaderTheme.SYSTEM → DARK/LIGHT。
     val systemDark = isSystemInDarkTheme()
     LaunchedEffect(systemDark) {
@@ -174,7 +172,10 @@ fun ReaderScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
-        AndroidFragment<ReaderFragment>(modifier = Modifier.fillMaxSize())
+        AndroidFragment<ReaderFragment>(
+            modifier = Modifier.fillMaxSize(),
+            arguments = Bundle().apply { putString(ReaderFragment.ARG_BOOK_ID, bookId) },
+        )
 
         // READ-03：点击左右边缘翻页（仅分页模式；scroll 模式是上下滚动，点击无意义）。
         // 左右各 20% 宽，中间 60% 留给 WebView 文本选择 / 链接。顶栏 / 底栏在更高 z 层覆盖上下区。

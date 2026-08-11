@@ -177,21 +177,45 @@ class ReaderViewModel @Inject constructor(
     private val currentBookId: String? get() = _activeBookId.value
     private val latestLocator: Locator? get() = _latestLocator.value
     private var persistJob: Job? = null
+    private var openJob: Job? = null
 
     /**
      * 打开指定 [bookId] 的书。幂等：同 bookId 不重复 open（旋转重建时不会重复打开）。
      */
     fun openBook(bookId: String) {
         if (bookId == currentBookId) return
-        // 切换书：close 上一本（若有）
+
+        // 切书前用旧 bookId 保存旧 Locator；随后任何旧 Navigator 迟到回调都会被来源校验拒绝。
+        val previousBookId = currentBookId
+        val previousLocator = latestLocator
+        persistJob?.cancel()
+        persistJob = null
+        if (previousBookId != null && previousLocator != null) {
+            viewModelScope.launch { progressRepository.save(previousBookId, previousLocator) }
+        }
+
+        openJob?.cancel()
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
+        // 必须同步进入 Loading：ReaderFragment.onCreate 紧接着会选择恢复 factory，不能再看到旧 Ready。
+        _uiState.value = ReaderUiState.Loading
         _activeBookId.value = bookId // 驱动 bookmarks/annotations 重新订阅新书
+        _latestLocator.value = null
+        _progressText.value = "0%"
+        _progression.value = 0.0
         openPublication(bookId)
     }
 
+    /** 新建 ReaderFragment 时优先恢复当前会话的最新位置，而不是首次打开时的旧快照。 */
+    fun restoreLocatorForNavigator(state: ReaderUiState.Ready): Locator? =
+        selectNavigatorRestoreLocator(
+            activeBookId = currentBookId,
+            readyBookId = state.bookId,
+            latestLocator = latestLocator,
+            initialLocator = state.initialLocator,
+        )
+
     private fun openPublication(bookId: String) {
-        viewModelScope.launch {
-            _uiState.value = ReaderUiState.Loading
+        openJob = viewModelScope.launch {
             // 切书重置跳转状态（目录 / 历史 / 进度）+ 清空搜索（释放旧 iterator）
             _tableOfContents.value = emptyList()
             jumpHistory.clear()
@@ -213,23 +237,42 @@ class ReaderViewModel @Inject constructor(
 
             result
                 .onSuccess { publication ->
+                    // 快速切书时旧打开任务可能迟到；不发布旧状态，并主动释放 Publication。
+                    if (bookId != currentBookId) {
+                        publication.close()
+                        return@onSuccess
+                    }
                     // 能力来自打开后的 Publication（conformsTo + isSearchable），非扩展名（红线 #2）。
                     _capabilities.value = publication.toReaderCapabilities()
                     // 扁平化目录（含嵌套 children → depth 缩进）
                     _tableOfContents.value = flattenTableOfContents(publication.tableOfContents)
                     val savedLocator = progressRepository.getLocator(bookId) // Room 替代 LocatorStore
+                    val initialLocator = savedLocator?.takeIf {
+                        isLocatorInReadingOrder(it, publication.readingOrder)
+                    }
+                    // 历史版本可能把另一部书的 Locator 写进当前 bookId；不能再交给 Navigator 恢复。
+                    if (savedLocator != null && initialLocator == null) {
+                        progressRepository.delete(bookId)
+                    }
                     bookRepository.markOpened(bookId) // lastOpenedAt + status=READING
+                    if (bookId != currentBookId) {
+                        publication.close()
+                        return@onSuccess
+                    }
                     val factory = EpubNavigatorFactory(publication)
                     _uiState.value = ReaderUiState.Ready(
+                        bookId = bookId,
                         publication = publication,
                         navigatorFactory = factory,
-                        initialLocator = savedLocator,
+                        initialLocator = initialLocator,
                         // 派生偏好的当前快照（含 SYSTEM 解析）；后续 Fragment 持续 collect preferences 覆盖。
                         preferences = preferences.value,
                     )
                 }
                 .onFailure { error ->
-                    _uiState.value = ReaderUiState.Error(error.message)
+                    if (bookId == currentBookId) {
+                        _uiState.value = ReaderUiState.Error(error.message)
+                    }
                 }
         }
     }
@@ -237,7 +280,8 @@ class ReaderViewModel @Inject constructor(
     // ===== currentLocator 落盘（防抖 1.5s，对齐 design.md §6.5）=====
 
     /** 由 ReaderFragment 订阅 navigator.currentLocator 后转发到此。 */
-    fun onLocatorUpdated(locator: Locator) {
+    fun onLocatorUpdated(sourceBookId: String, locator: Locator) {
+        if (!acceptsLocator(currentBookId, sourceBookId)) return
         _latestLocator.value = locator
         val prog = locator.locations.totalProgression ?: 0.0
         _progressText.value = "${(prog * 100).toInt()}%"
