@@ -6,6 +6,7 @@ import androidx.datastore.dataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.xuziyue.ebook.data.BookFileImporter
+import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
@@ -82,6 +83,13 @@ object ReaderModule {
             scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
             produceFile = { context.dataStoreFile("reader_settings.preferences_pb") },
         )
+
+    /** 阅读排版偏好仓库（TYPE-01/02）：复用上面的全局 DataStore。 */
+    @Provides
+    @Singleton
+    fun provideReaderTypographyRepository(
+        dataStore: DataStore<Preferences>,
+    ): ReaderTypographyRepository = ReaderTypographyRepository(dataStore)
 
     @Provides
     @Singleton

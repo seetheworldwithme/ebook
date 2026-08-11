@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 0 | 0 |
+| P0（MVP 必做） | 28 | 7 | 1 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 0 | 0 |
 
-> 当前进度：0 / 42（Phase 1 刀1 完成：Room 数据层 + 导入 IMP-01/03/04 + 进度闭环 READ-01/08 + 书库列表 LIB-01 雏形，单测+编译+lint 全绿；🚧 项待真机回归转 ✅。详见文末变更记录）。
+> 当前进度：7 / 42（刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 真机回归通过转 ✅；LIB-01 🚧 列表雏形验过、完整网格/封面/进度留刀2-C；单测 81 + 编译 + lint + 真机全绿。详见文末变更记录）。
 
 ---
 
@@ -47,17 +47,17 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| IMP-01 | 🚧 | 系统文档选择器导入单个 / 多个受支持文件（不申请「所有文件访问」）。刀1：SAF 导入 + Room 落库完成，待真机回归 |
+| IMP-01 | ✅ | 系统文档选择器导入单个 / 多个受支持文件（不申请「所有文件访问」）。刀1：SAF 导入 + Room 落库；真机回归 SAF 导入外部 EPUB/TXT 入库通过 |
 | IMP-02 | ⬜ | 接收 `ACTION_VIEW` / `ACTION_SEND` 打开的电子书 |
-| IMP-03 | 🚧 | 导入时复制到应用私有目录（删/移原文件后仍可读，失败不留半成品）。刀1：BookFileImporter 原子复制+SHA-256 去重 + ImportBookUseCase 事务清理完成，待真机回归 |
-| IMP-04 | 🚧 | 提取标题、作者、封面、格式、文件大小、SHA-256 唯一哈希。刀1：ExtractPublicationMetadataUseCase（Readium metadata + cover）+ contentHash 唯一索引完成，待真机回归 |
+| IMP-03 | ✅ | 导入时复制到应用私有目录（删/移原文件后仍可读，失败不留半成品）。刀1：BookFileImporter 原子复制+SHA-256 去重 + ImportBookUseCase 事务清理；真机回归通过 |
+| IMP-04 | ✅ | 提取标题、作者、封面、格式、文件大小、SHA-256 唯一哈希。刀1：ExtractPublicationMetadataUseCase + contentHash 唯一索引；真机回归导入入库通过 |
 | IMP-05 | ⬜ | 展示导入进度 / 成功 / 可理解的失败原因 |
 
 ### 书库（LIB）
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| LIB-01 | 🚧 | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅）。刀1：最简书名列表（书名+作者/format+点击打开）已通；网格/封面/进度/排序留刀2 |
+| LIB-01 | 🚧 | 网格 / 列表展示封面、书名、作者、进度、最近阅读时间（5000 条仍流畅）。刀1：最简书名列表真机回归验过（导入入库+可见+点击打开）；网格/封面/进度/排序留刀2-C |
 | LIB-02 | ⬜ | 最近阅读、全部、已读完三个入口 |
 | LIB-03 | ⬜ | 按书名 / 作者搜索，按最近阅读 / 导入时间 / 书名排序 |
 | LIB-04 | ⬜ | 书籍详情页（元数据、进度、文件信息、批注数量、继续阅读） |
@@ -66,21 +66,21 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| READ-01 | 🚧 | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator）。刀1：ReadingProgress(Room) 替代 LocatorStore，待真机回归 |
+| READ-01 | ✅ | 打开时恢复最近可靠位置（正常退出 / 后台 / 被杀 / 重启均恢复，用 Locator）。刀1：ReadingProgress(Room) 替代 LocatorStore；真机回归强杀+冷启 16%→16% 恢复通过 |
 | READ-02 | ⬜ | 目录、章节跳转、当前位置百分比、进度拖动 |
 | READ-03 | ⬜ | 点击区域、左右滑动、音量键翻页（音量键可关闭） |
 | READ-04 | ⬜ | 分页与纵向滚动两种模式 |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
 | READ-06 | ⬜ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成） |
 | READ-07 | ⬜ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用） |
-| READ-08 | 🚧 | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository，待真机回归 |
+| READ-08 | ✅ | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository；真机回归翻页后强杀恢复通过 |
 
 ### EPUB / TXT 排版（TYPE）
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| TYPE-01 | ⬜ | 字号、字体、字重、行高、段距、页边距、对齐（实时预览 + 保位） |
-| TYPE-02 | ⬜ | 日间、米黄、夜间主题与跟随系统（夜间无白屏闪烁） |
+| TYPE-01 | ✅ | 字号、字体、字重、行高、段距、页边距、对齐（实时预览 + 保位）。刀2-A：全维度接 DataStore 持久化 + 排版面板；真机回归字号 130% 杀重启保位 + slider 跟手通过。字重 UI 推后（数据层+映射就绪，留 TYPE-05 一并） |
+| TYPE-02 | ✅ | 日间、米黄、夜间主题与跟随系统（夜间无白屏闪烁）。刀2-A：真机回归夜间实时+杀重启保位 + 跟随系统（系统暗色切换正文跟随）+ 夜间无白屏闪烁均通过 |
 | TYPE-03 | ⬜ | 屏幕亮度、常亮、方向设置 |
 | TYPE-04 | ⬜ | 正确显示中文、日文、RTL、竖排、ruby 注音（建回归样本集） |
 
@@ -166,6 +166,10 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：刀1 IMP-01/03/04 + READ-01/08 + 刀2-A TYPE-01/02 转 ✅（LIB-01 维持 🚧 待完整网格/封面）。** 自动化验：冷启动不崩、导入 Alice+翻页+强杀恢复 16%（READ-01/08 Locator 闭环）、字号 130% 杀重启保位（TYPE-01 DataStore）、夜间主题实时+杀重启保位（TYPE-02）。徐先生手指验：SAF 导入外部 EPUB/TXT（中文不乱码）、跟随系统（系统暗色切换正文跟随）、夜间无白屏闪烁、高亮（长按选中→ActionMode→变黄+计数）、slider 拖动跟手。**抓到并修复 1 个真 bug**：排版面板主题 4 按钮（跟随系统/日间/米黄/夜间）单行 Row 放不下、「夜间」被挤出屏外不可见（uiautomator dump 缺「夜间」诊断）→ OptionGroup `Row`→`FlowRow` 自动换行修复，重编译装验夜间按钮可见 + 实时 + 保位。**logcat 干净**：crash buffer 空、无 FATAL、无 Readium Error、无 OOM/ANR；唯一 `hiddenapi AccessibilityNodeInfo.getSelection/setSelection denied`（E 级，Readium classes13.dex，targetSdk 36 + Android 16 文本选择可访问性 API 被拦）——徐先生实测高亮正常、Readium 降级不影响功能，记为库已知行为（REL-06 无障碍时复核 TalkBack 选区播报）。**字重 UI 推后**（数据层+映射就绪，TYPE-01 其余 6 维度 + 保位真机验过，字重 slider 留 TYPE-05 自定义字体一并）。**测试证据**：81 单测 + assembleDebug + lintDebug 全绿 + 真机 6 组截图 + logcat 无错。
+
+> 实现状态（2026-08-11）：**刀2-A 完成：排版偏好持久化保位（TYPE-01/02），🚧 待真机回归转 ✅。** 打通「调排版 → DataStore 落盘 → 重启恢复 → Readium 实时生效」闭环，TYPE-01 七维度（字号/字体/字重/行高/段距/页边距/对齐）+ TYPE-02（日/黄/夜/跟随系统）全部接通。新增 4 文件 + 改 4：① **`:core:model` `ReaderTypography`**（引擎无关 data class，全 nullable；`ReaderTheme`(LIGHT/SEPIA/DARK,**SYSTEM**——Readium 无 SYSTEM 自加) + `ReaderTextAlign`(START/JUSTIFY)；`Default.theme=SYSTEM` 产品默认跟随系统；沿用 ReaderCapabilities 范式不拆 `:core:reader-api`）。② **`:reader:readium` `TypographyMappings.kt`**（`ReaderTypography.toEpubPreferences(isSystemDark)` 扩展，SYSTEM 据系统暗色解析 DARK/LIGHT，沿用 toReaderCapabilities 先例；FontFamily 是 Readium inline value class，String→`FontFamily(it)` 转换）。③ **`:app` `ReaderTypographyRepository`**（包装 DataStore<Preferences>，observe/update 双向映射；**theme 未设默认 SYSTEM**（产品默认集中在 Repository，不随其它字段写入漂移）；enum 用 name 存取 + runCatching 防御改名；纯 JVM 可单测）。④ **`ReaderViewModel` 改造**：注入 repository；`typography`+`_systemDark` 经 `combine`+`stateIn(Eagerly)` 派生 `preferences: StateFlow<EpubPreferences>`（删纯内存 `_preferences` + `syncReadyPreferences`）；各 setter（changeFontSize delta / setFontSize 绝对 / setLineHeight / setPageMargins / setParagraphSpacing / setTextAlign / setFontFamily / setTheme）全走 repository.update（**单向数据流，不乐观更新内存**——避免快速连点时 DataStore 与内存竞态回退）；`setSystemDark` 接收 isSystemInDarkTheme；openPublication 用 preferences.value 作 initialPreferences（首次渲染即正确主题，夜间防白屏链路）。⑤ **`ReaderScreen` 改造**：`isSystemInDarkTheme()` 经 LaunchedEffect 推 setSystemDark；底栏精简（字号±/排版入口/高亮组，主题移入面板）；新增 `TypographySheet`（ModalBottomSheet：字号/行高/段距/页边距 Slider + 对齐/字体/主题按钮组含「跟随系统」）；Slider `remember(value)` 本地 state 跟手 + onValueChangeFinished 松手写一次（避免拖动高频写 DataStore）。**DI**：ReaderModule 加 provideReaderTypographyRepository（复用既有 DataStore）。**测试**：`:core:model:testDebugUnitTest` **9 passed**（ReaderTypographyTest 4：Default=SYSTEM/copy 保字段/enum name 稳定/valueOf 还原 + ReaderCapabilities 5 回归）；`:reader:readium:testDebugUnitTest` **42 passed**（TypographyMappingsTest 移走后纯 JVM 全回归）；`:app:testDebugUnitTest` **30 passed**（TypographyMappingsTest 6 + ReaderTypographyRepositoryTest 5 + 刀1 19 回归）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（仅 ArrowBack/@ApplicationContext 2 既有 warning，非本次引入）。合计 core 9 + reader 42 + app 30 = **81 单测全绿**。**踩坑**：① **`EpubPreferences.fontFamily` Kotlin 类型是 `FontFamily?`（Readium inline value class）非 `String?`**——javap 看字段是 String 但构造参数是 FontFamily，映射要 `FontFamily(it)`（`FontFamily("Serif")` 构造可见）。② **`EpubPreferences` init require**：`fontWeight ∈ 0.0..2.5`（**非 CSS 100–900**！Readium 归一化字重，1.0≈normal）、fontSize/pageMargins/paragraphSpacing/letterSpacing/typeScale/wordSpacing ≥0——修正 ReaderTypography 注释 + 测试值（原误记 100-900）。③ **`Theme` 枚举依赖 `android.graphics.Color.parseColor`**（每个 Theme 值带 contentColor/backgroundColor int），纯 JVM unit test 的 android.jar stub 抛 "not mocked"（与 P0V-01 Locator/Uri 同类）→ **TypographyMappingsTest 放 app 模块用 Robolectric**（app 已配 sdk=34），不放 :reader:readium（保持其纯 JVM 不引 Robolectric）。④ **DataStore key 类型是 `Preferences.Key<T>`** 非 `Preferences.DoubleKey/StringKey`（内部嵌套类不公开）。**待真机验证（🚧→✅ 条件）**：排版面板 UI 渲染 + Slider 拖动跟手；字号/行高/段距/页边距/对齐/字体/主题实时生效 + **重启保位**；跟随系统在系统暗色切换时正确解析（Activity 重建 + LaunchedEffect 双保险）；**夜间无白屏闪烁**（initialPreferences 已带 DARK，WebView 容器背景留真机观察）；调排版后**阅读位置保持**（Readium submitPreferences 保位，沿用 P0V-02 已验机制再确认）。**字重 UI 推后**（数据层就绪，UI 留 TYPE-05 自定义字体一并或单独刀）。**仅单测+编译+lint，未真机回归**——TYPE-01/02 维持 🚧。
 
 > 实现状态（2026-08-10）：**Phase 1 刀1 完成：Room 数据层地基 + 导入 + 进度闭环 + bookId 寻址 + 书库列表雏形。单测+编译+lint 全绿，IMP-01/03/04、READ-01/08、LIB-01 标 🚧 待真机回归转 ✅。** 打通「导入 EPUB/TXT → Room 持久化 → 书库可见 → 阅读 → 杀进程不丢进度」闭环骨架。新增 11 文件 + 改 5 + 删 1（LocatorStore）。① **Room 数据层**（`:app/data/db/`）：`BookEntity`（PK=id，uniqueIndex=contentHash）+ `ReadingProgressEntity`（PK=bookId，ForeignKey CASCADE 删书连带删进度）+ `BookTypeConverters`（authors↔JSON、status↔name）+ `BookDatabase`(v1, exportSchema=true) + `BookDao`/`ReadingProgressDao` + `BookMappers`（Entity↔domain）。② **schema export**（红线 #6）：`app/build.gradle.kts` 加 `ksp { arg("room.schemaLocation","$projectDir/schemas"); arg("room.generateKotlin","true") }`，schema 落 `app/schemas/.../BookDatabase/1.json`（已生成确认）。③ **Repository**：`BookRepository`（observeBooks 排序 lastOpenedAt desc nulls last、getByContentHash 去重、markOpened）、`ReadingProgressRepository`（getLocator/save 走 PersistedLocator + totalProgression，clock 注入）。④ **导入事务**（红线 #4 不留半条记录）：`ExtractPublicationMetadataUseCase`（`:reader:readium`，复用 OpenBookUseCase/OpenTxtUseCase `allowUserInteraction=false`，读 `metadata`（title 空→文件名兜底、authors mapNotNull 去空）+ `publication.cover()`，finally close）+ `ImportBookUseCase`（Outcome 三态 Imported/AlreadyExists/Failed + bookIdOrNull 扩展；原子性矩阵：copyWithHash 失败自清→查重短路→extract 失败删书文件→封面失败降级 null→insert 失败回滚书文件+封面；format/mediaType 由扩展名派生不穿透 Readium）。⑤ **reader bookId 改造**：route `reader/{contentHash}`→`reader/{bookId}`；`ReaderViewModel` 注入 BookRepository/ReadingProgressRepository 替换 locatorStore，`openPublication` 从 Book 拿 filePath+contentHash（打开层仍按扩展名分流，P0V-05 论证非能力层），进度恢复 `progressRepository.getLocator` + `markOpened`，落盘 `progressRepository.save`（防抖 1.5s + flushLocator）；删 `LocatorStore`，保留 DataStore provider（刀2 TYPE 用）。⑥ **书库列表**（`MainActivity.LibraryScreen`）：observeBooks 书名列表（书名+作者/format）+ 点击打开 + 空提示 + 导入按钮（SAF）+ 读 Alice；最简，网格/封面/进度/搜索/排序留刀2。**DI**：新建 `DatabaseModule`（BookDatabase/Dao/Repository/ImportBookUseCase @Singleton），`ReaderModule` 加 ExtractPublicationMetadataUseCase provider、删 provideLocatorStore。**关键决策**：Entity 放 `:app/data/db` 不拆 `:core:database`（CLAUDE.md 不拆模块）；authors TypeConverter（domain 保持 List）；locatorJson 复用 `PersistedLocator.toJsonString`（含 schemaVersion）；ReadingProgress PK=bookId + CASCADE；单行 insert 无需 @Transaction（多行事务留刀3+批注）；DataStore→Room 数据迁移**不做**（私人项目测试数据可重建、schema v1 未稳定）。**测试**：`:app:testDebugUnitTest` **19 passed**（BookDaoTest 6：insert/getById/getByContentHash/contentHash 重复抛约束/observeAll 排序/touchOpened/status 往返；ReadingProgressDaoTest 3：upsert REPLACE 覆盖/get null/CASCADE；SchemaExportedTest 1：formatVersion+database.entities；+ 既有 ContentHash 4 + PersistedLocator 5）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL。合计 model 5 + readium 42 + app 19 = **66 单测全绿**。**踩坑**：① **Robolectric DefaultSdkPicker 失败**（compileSdk 36，Robolectric 4.14.1 最高 35）→ `app/src/test/resources/robolectric.properties` 固定 `sdk=34`（Room DAO 测 SQLite 行为与 SDK 无关）+ `testOptions.unitTests.isIncludeAndroidResources=true`；② **schema classpath 路径**：`sourceSets.test.resources.srcDir(schemas)` 把内容映射到 classpath 根，`SchemaExportedTest` 的 resource 路径要去 `schemas/` 前缀；③ **Room schema 结构**：entities 在 `database` 对象下非根（`root.getJSONObject("database").getJSONArray("entities")`）；④ **Readium metadata.title/name 是 String? 平台类型**（javap 报 getTitle():String 但 Kotlin 绑定可空）→ `m.title?.takeIf{}` + `mapNotNull{it.name}`。**migration 框架**：v1 无 migration；CI 跑 `SchemaExportedTest` 验 schema 导出；`MigrationTestHelper` 骨架 + androidTest assets srcDir 就位（需真机，CI 跳过，v2 加 migration 时复用）。**仅单测 + 编译 + lint，未真机回归**（阅读流程 ReaderViewModel/MainActivity 改动大，LocatorStore→Room 切换）——IMP-01/03/04、READ-01/08、LIB-01 维持 🚧，待徐先生真机连机验「导入 EPUB/TXT → 书库列表可见 → 打开阅读 → 翻页 → 杀进程/旋转 → 恢复进度」全链路后转 ✅。下一步：真机回归通过转 ✅ → 刀2（完整 LIB-01/03 + READ-02 目录 + READ-04 分页滚动 + TYPE-01/02 排版保位）。
 

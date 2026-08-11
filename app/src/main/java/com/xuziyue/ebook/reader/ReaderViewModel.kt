@@ -6,10 +6,15 @@ import android.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.model.ReaderCapabilities
+import com.xuziyue.ebook.model.ReaderTextAlign
+import com.xuziyue.ebook.model.ReaderTheme
+import com.xuziyue.ebook.model.ReaderTypography
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
+import com.xuziyue.ebook.reader.readium.toEpubPreferences
 import com.xuziyue.ebook.reader.readium.toReaderCapabilities
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -17,14 +22,16 @@ import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubPreferences
-import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.util.AbsoluteUrl
@@ -36,13 +43,17 @@ import java.io.File
  * 职责：
  * 1. 管理 [Publication][org.readium.r2.shared.publication.Publication] 生命周期（open / close / 进程重建重 open）。
  * 2. 协调 [Locator] 恢复——从 [ReadingProgressRepository]（Room）读最近位置作 initialLocator，currentLocator 变化防抖落盘。
- * 3. 持有排版偏好（[EpubPreferences]）与高亮（[Decoration]）StateFlow，供 Compose 控制条与 Fragment 订阅。
+ * 3. 持有排版偏好（[typography] 引擎无关 → [preferences] 解析为 [EpubPreferences]）与高亮（[Decoration]）StateFlow，
+ *    供 Compose 控制条与 Fragment 订阅。
  * 4. 实现 [EpubNavigatorFragment.Listener]（外链交系统浏览器，红线 #4 + design.md §7）。
  *
- * **Scope 决策**：绑 Activity scope（[com.xuziyue.ebook.MainActivity]）。这样 Compose 的 ReaderScreen 与
- * 嵌入的 ReaderFragment 通过 activityViewModels() 共享同一实例。contentHash 不依赖 SavedStateHandle，
- * 而由 [openBook] 传入——进程重建后 Navigation 恢复 route，ReaderScreen 重建调 openBook 重 open。
- * Phase 0 简化：返回书库时 publication 不立即 close（onCleared 或下次 openBook 时 close）。
+ * **排版偏好（design.md §4.4 TYPE-01/02）**：[typography] 来自 [ReaderTypographyRepository]（DataStore 持久化，
+ * 跨重启保位）；[preferences] 由 [typography] + 系统暗色（[setSystemDark]）经 `toEpubPreferences` 派生。
+ * 单向数据流：setter 写 Repository → observe 回流 → [typography]/[preferences] 更新 → Fragment submitPreferences。
+ *
+ * **Scope 决策**：绑 Activity scope（[com.xuziyue.ebook.MainActivity]）。Compose 的 ReaderScreen 与嵌入的
+ * ReaderFragment 通过 activityViewModels() 共享同一实例。bookId 由 [openBook] 传入——进程重建后 Navigation
+ * 恢复 route，ReaderScreen 重建调 openBook 重 open。
  */
 @OptIn(ExperimentalReadiumApi::class)
 @HiltViewModel
@@ -52,14 +63,29 @@ class ReaderViewModel @Inject constructor(
     private val openTxtUseCase: OpenTxtPublicationUseCase,
     private val bookRepository: BookRepository,
     private val progressRepository: ReadingProgressRepository,
+    private val typographyRepository: ReaderTypographyRepository,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
-    /** 排版偏好（Phase 0 内存态；完整跨书持久化留 Phase 1 TYPE）。 */
-    private val _preferences = MutableStateFlow(EpubPreferences())
-    val preferences: StateFlow<EpubPreferences> = _preferences.asStateFlow()
+    /**
+     * 引擎无关排版偏好（持久化驱动）。Default 初值避免首次空窗；Repository emit 后自动更新。
+     */
+    val typography: StateFlow<ReaderTypography> =
+        typographyRepository.observe()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default)
+
+    /** 当前系统是否暗色（由 ReaderScreen 据 isSystemInDarkTheme 推入），用于解析 [ReaderTheme.SYSTEM]。 */
+    private val _systemDark = MutableStateFlow(false)
+
+    /**
+     * 实际喂给 Readium 的排版偏好：[typography] 据系统暗色解析为 [EpubPreferences]
+     * （[ReaderTheme.SYSTEM] → DARK/LIGHT）。ReaderFragment collect 本 flow → submitPreferences 实时生效。
+     */
+    val preferences: StateFlow<EpubPreferences> =
+        combine(typography, _systemDark) { t, dark -> t.toEpubPreferences(dark) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default.toEpubPreferences(isSystemDark = false))
 
     /** 高亮 Decoration（Phase 0 内存验证渲染；批注先落盘留 Phase 1 READ-07）。 */
     private val _decorations = MutableStateFlow<List<Decoration>>(emptyList())
@@ -118,7 +144,8 @@ class ReaderViewModel @Inject constructor(
                         publication = publication,
                         navigatorFactory = factory,
                         initialLocator = savedLocator,
-                        preferences = _preferences.value,
+                        // 派生偏好的当前快照（含 SYSTEM 解析）；后续 Fragment 持续 collect preferences 覆盖。
+                        preferences = preferences.value,
                     )
                 }
                 .onFailure { error ->
@@ -149,22 +176,55 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch { progressRepository.save(bookId, locator) }
     }
 
-    // ===== 排版偏好（实时生效 + 旋转保位）=====
+    // ===== 排版偏好（实时生效 + 持久化保位，design.md §4.4 TYPE-01/02）=====
 
-    fun changeFontSize(delta: Double) {
-        val newSize = ((_preferences.value.fontSize ?: 1.0) + delta).coerceIn(0.5, 5.0)
-        _preferences.value = _preferences.value.copy(fontSize = newSize)
-        syncReadyPreferences()
+    /** 推入系统暗色状态（ReaderScreen 据 isSystemInDarkTheme 调），用于解析 [ReaderTheme.SYSTEM]。 */
+    fun setSystemDark(isDark: Boolean) {
+        _systemDark.value = isDark
     }
 
-    fun changeTheme(theme: Theme) {
-        _preferences.value = _preferences.value.copy(theme = theme)
-        syncReadyPreferences()
+    fun changeFontSize(delta: Double) = updateTypography {
+        it.copy(fontSize = ((it.fontSize ?: 1.0) + delta).coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX))
     }
 
-    private fun syncReadyPreferences() {
-        val ready = _uiState.value as? ReaderUiState.Ready ?: return
-        _uiState.value = ready.copy(preferences = _preferences.value)
+    fun changeLineHeight(delta: Double) = updateTypography {
+        it.copy(lineHeight = ((it.lineHeight ?: 1.0) + delta).coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX))
+    }
+
+    fun changePageMargins(delta: Double) = updateTypography {
+        it.copy(pageMargins = ((it.pageMargins ?: 1.0) + delta).coerceIn(PAGE_MARGINS_MIN, PAGE_MARGINS_MAX))
+    }
+
+    fun changeParagraphSpacing(delta: Double) = updateTypography {
+        it.copy(paragraphSpacing = ((it.paragraphSpacing ?: 0.0) + delta).coerceIn(0.0, PARAGRAPH_SPACING_MAX))
+    }
+
+    // 绝对值 setter（排版面板 Slider 用，onValueChangeFinished 松手调一次，避免拖动高频写）。
+    fun setFontSize(value: Double) = updateTypography {
+        it.copy(fontSize = value.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX))
+    }
+    fun setLineHeight(value: Double) = updateTypography {
+        it.copy(lineHeight = value.coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX))
+    }
+    fun setPageMargins(value: Double) = updateTypography {
+        it.copy(pageMargins = value.coerceIn(PAGE_MARGINS_MIN, PAGE_MARGINS_MAX))
+    }
+    fun setParagraphSpacing(value: Double) = updateTypography {
+        it.copy(paragraphSpacing = value.coerceIn(0.0, PARAGRAPH_SPACING_MAX))
+    }
+
+    fun setTextAlign(align: ReaderTextAlign) = updateTypography { it.copy(textAlign = align) }
+
+    fun setFontFamily(family: String?) = updateTypography { it.copy(fontFamily = family) }
+
+    fun setTheme(theme: ReaderTheme) = updateTypography { it.copy(theme = theme) }
+
+    /**
+     * 写入持久化层；observe 自动回流 → [typography]/[preferences] 更新 → Fragment submitPreferences。
+     * 单向数据流（不乐观更新内存），避免快速连点时内存与 DataStore 竞态回退。
+     */
+    private fun updateTypography(transform: (ReaderTypography) -> ReaderTypography) {
+        viewModelScope.launch { typographyRepository.update(transform) }
     }
 
     // ===== 高亮（Phase 0 验证 Decoration 渲染）=====
@@ -203,5 +263,13 @@ class ReaderViewModel @Inject constructor(
 
     private companion object {
         const val PERSIST_DEBOUNCE_MS = 1500L
+        // 排版数值范围（UI 滑块同此；null = 引擎默认，coerce 仅约束显式设置的值）。
+        const val FONT_SIZE_MIN = 0.5
+        const val FONT_SIZE_MAX = 5.0
+        const val LINE_HEIGHT_MIN = 1.0
+        const val LINE_HEIGHT_MAX = 3.0
+        const val PAGE_MARGINS_MIN = 0.5
+        const val PAGE_MARGINS_MAX = 4.0
+        const val PARAGRAPH_SPACING_MAX = 3.0
     }
 }
