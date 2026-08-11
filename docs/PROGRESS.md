@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 16 | 0 |
+| P0（MVP 必做） | 28 | 18 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 16 | 0 |
+| 合计 | 42 | 18 | 0 |
 
-> 当前进度：16 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 + DATA-01 + READ-03 + READ-05 真机回归全过转 ✅）。详见文末变更记录。
+> 当前进度：18 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 + DATA-01 + READ-03 + READ-05 + LIB-02 + LIB-04 真机回归全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -58,9 +58,9 @@
 | ID | 状态 | 需求 |
 | --- | --- | --- |
 | LIB-01 | ✅ | 网格/列表展示封面、书名、作者、进度、最近阅读时间。刀2-C：完整列表 + 网格切换 + Coil 封面 + 进度条(LEFT JOIN) + 相对时间。真机：列表/封面/进度/相对时间 + 网格 2 列切换 全过 |
-| LIB-02 | ⬜ | 最近阅读、全部、已读完三个入口 |
+| LIB-02 | ✅ | 最近阅读、全部、已读完三个入口。真机（vivo V2329A）全过：PrimaryTabRow 三入口 + RECENT=打开过 3 本 / FINISHED=空（筛选生效）+ 空态文案「还没有读完的书」/ ALL=3 本；Tab 切换响应 |
 | LIB-03 | ✅ | 按书名/作者搜索，按最近阅读/导入时间/书名排序。真机：LIKE 搜索（"Alice"→只剩 Alice）+ 3 种排序（书名升序 Alice→万→山 / 导入时间 / 最近阅读）全过 |
-| LIB-04 | ⬜ | 书籍详情页（元数据、进度、文件信息、批注数量、继续阅读） |
+| LIB-04 | ✅ | 书籍详情页（元数据、进度、文件信息、批注数量、继续阅读）。真机（vivo V2329A）全过：卡片点击进详情 + 五区块齐全（封面/书名作者/语言/进度 3%·最近阅读/文件信息 EPUB·133.6KB·导入时间/书签 0·笔记 0）+ CTA「继续阅读」→ reader 恢复 3% locator + 响应式（reader 返回详情 lastOpenedAt 刷新 32分钟前→刚刚）；不展示 filePath/contentHash（红线 #8） |
 
 ### 阅读器通用能力（READ）
 
@@ -166,6 +166,20 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：LIB-02 三入口 + LIB-04 详情页 🚧→✅。P0 18 ✅ / 0 🚧，LIB 域 P0 全闭环（LIB-01/02/03/04）。** adb 全自动驱动（三 Tab 切换 / 点卡片 / CTA / 翻页 / 返回 + uiautomator dump 文本断言），无需手指（不像音量键）。
+> **LIB-02 真机**：`PrimaryTabRow` 三入口渲染（最近阅读 / 全部 / 已读完，y=708-768 横排）；默认「全部」3 本（Alice 3% / 山海經 16% / 万相之王 3%）；「最近阅读」3 本（`lastOpenedAt` 非空全命中）；「已读完」**空**（无 FINISHED 书，`CASE :filter` 筛选生效）+ **空态文案修复**「还没有读完的书」（原误显示"还没有书，导入一本开始吧"，按 filter 维度区分空态：query 非 空→搜索无果 / FINISHED→还没读完 / RECENT→还没最近阅读 / ALL→还没书）。Tab 切换响应式。
+> **LIB-04 真机**：点 Alice 卡 → 详情页五区块齐全：① 元数据（大封面 + `Alice's Adventures in Wonderland` + Lewis Carroll + 语言：en）② 进度 3% + LinearProgressIndicator + 最近阅读时间 ③ 文件信息（EPUB（application/epub+zip）/ 133.6 KB / 5小时前，**无 filePath / contentHash** 红线 #8）④ 📑 0 书签 · 🖊 0 笔记 ⑤ CTA「继续阅读」（progression 非空）。CTA → reader 恢复 **进度 3%**（顶栏「返回书库 / 目录 / 进度 3% / 书签 0 / 笔记 0」，locator 正确）；**响应式刷新**——reader 返回详情页「最近阅读」从 32分钟前 →「刚刚」（`observeById` Flow 回推，无需重进页面）。
+> **真机边界（单测覆盖、未真机验）**：① 未读书 CTA 文案「开始阅读」（progression=null 分支）——设备 3 本均打开过有进度，`BookDetailViewModelTest` 已覆盖 null 分支；② progression 数值实时刷新——reader 翻页 8 次 tap 未推进整百分点（3% 仍 3%，Alice 短书每页 <1%），但同一 `Flow.combine` 机制的 `lastOpenedAt` 响应式已被「刚刚」证明、`progressDao.observe` 同理，不单独再改 DB 验证（避免动真实书库数据）。
+> **顺带修 1 个真机发现的 UX 缺陷**：「已读完 / 最近阅读」筛选空态文案原复用「还没有书，导入一本开始吧」——对筛选空态误导（不是没书，是没读完/没最近阅读的书）。改为按 `filter` 维度区分空态文案（`when`：query 非空→搜索无果 / FINISHED→还没有读完的书 / RECENT→还没有最近阅读的书 / ALL→还没有书）。
+> **测试证据**：`:app:testDebugUnitTest` **110 passed**（0 fail 0 error 0 skip）+ `:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL + 真机 adb 全链路（Tab 切换 / 点卡片 / CTA / 翻页 / 返回 + uiautomator dump 文本断言 + 文案修复重装复验）。
+
+> 实现状态（2026-08-11）：**刀 LIB-02/04 代码完成 🚧 待真机转 ✅：书库三入口（最近阅读/全部/已读完）+ 书籍详情页（元数据/进度/文件信息/书签笔记数/继续阅读）。仅单测+编译+lint 全绿，未真机回归（对齐项目「真机过才 ✅」惯例）。** 两件 LIB 域 P0 合做一刀（书库同构、共享 query/UI 范式，与 READ-06/07 合刀同理），LIB 域 P0 仅剩这两项，做完即 LIB-01/02/03/04 全闭环。
+> **LIB-02 三入口**：`BookDao.observeLibraryItems` 加 `filter` 参数——WHERE 段 `CASE :filter`（RECENT=`lastOpenedAt IS NOT NULL` 打开过即算 / FINISHED=`status='FINISHED'`=`ReadingStatus.FINISHED.name` / ALL 放行），复用同一条 LEFT JOIN 查询不破坏 LIB-01/03；`BookRepository.observeLibraryItems(query, filter)` 透传；`LibraryViewModel` 加 `LibraryFilter` 枚举 + `filter` StateFlow，items 链改 `combine(query, filter).flatMapLatest{ repo.observeLibraryItems(q, f.key) }.combine(sort){ sortItems }`——filter/query 触发 DAO 重查（响应式回推满足「状态变化后列表实时刷新」硬验收），sort 仅内存排序；默认 Tab=全部（新书导入必可见，避免未打开的书在「最近阅读」消失造成困惑）；`LibraryScreen` 搜索框下加 `PrimaryTabRow`（旧 `TabRow` 已 deprecated，换 `PrimaryTabRow`）。
+> **LIB-04 详情页**：NavHost 加 `detail/{bookId}` 路由，卡片点击改跳详情（不再直跳 reader），详情页「继续阅读」CTA → reader（ReaderViewModel 自取 locator 恢复，详情页不传 locator）；`BookDetailViewModel`（@Hilt，`SavedStateHandle` 取 bookId——Navigation Compose 把 route 参数注入）注 `BookRepository` + 3 DAO，`Flow.combine` 聚合 book（新加 `BookDao.observeById` / `BookRepository.observeBookById` 响应式，从阅读器返回时 lastOpenedAt/状态变化实时反映）+ progression + 书签数 + 笔记数（计数 `observe(bookId).map{ it.size }`，批注 `AnnotationDao.observe` 已过滤 `deletedAt IS NULL` 软删安全）——**不碰 DB schema**（阅读时长 `ReadingSession` 完全缺失，但不在 LIB-04 验收口径内，推后单独一刀）；`BookDetailScreen` 五区块：① 元数据（大封面 + 书名 + 作者 + 简介 maxLines + 语言）② 进度（`LinearProgressIndicator` + 百分比 + `relativeTime` 最近阅读）③ 文件信息（format·mediaType·fileSize KB/MB 格式化·导入时间，**不展示 filePath / contentHash**——红线 #8 UI 不含完整路径、hash 对用户无意义）④ 书签·笔记数 ⑤ 继续阅读 CTA（有进度=「继续阅读」/ 未读=「开始阅读」）。`BookCover` 从 MainActivity 私有提为 `ui/BookCover.kt` 共享（书库卡 + 详情页大封面复用），清理 6 个孤儿 import。
+> **测试（新增 9，全绿）**：BookDaoTest +5（filter RECENT / FINISHED / ALL / RECENT 叠加搜索 / observeById 响应式）+ BookDetailViewModelTest 4（in-memory Room + SavedStateHandle：聚合 book+进度+2 书签+1 笔注 / 书不存在 book=null / 未读无进度 progression=null / 软删批注不计入）；现有 BookDaoTest 5 处 `observeLibraryItems` 调用同步加 `"ALL"` 参数。`:app:testDebugUnitTest` **110 passed**（0 fail 0 error 0 skip）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL（`PrimaryTabRow` 无 deprecation warning）。
+> **踩坑**：① `BookDetailScreen` 首版仍传 `bookId=` 命名参数——但 ViewModel 改用 `SavedStateHandle` 取 bookId，Screen 不接收 bookId 参数，去掉该行；② `ui/BookCover.kt` 提取时漏 import `Box`（连锁报 @Composable 误报），补 import。
+> **仅单测+编译+lint，未真机回归**——待真机验「① 三 Tab 切换列表正确 ② 打开书读几页 → 返回书库『最近阅读』实时出现该书 ③ 读到结尾 finished → 『已读完』实时出现 ④ 点卡片 → 详情页五区块齐全 ⑤ CTA → reader 恢复 locator ⑥ 从 reader 返回详情页进度/最近时间刷新 ⑦ 未读书 CTA 文案=『开始阅读』」后转 ✅。三入口/详情页/CTA 均可 adb 全自动驱动（不像音量键要手指）。
 
 > 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-03 翻页 + READ-05 书内搜索 🚧→✅。P0 16 ✅ / 0 🚧。** adb 自动化（搜索 / 点击翻页 / 键盘）+ 徐先生手指（音量键 / 开关 / 保位 / 高亮）混合验证。
 > **READ-05 搜索真机**：搜 "Rabbit" → **找到 11 条结果** + 每条带 before/命中词/after 上下文 + **大小写不敏感**（"a rabbit with either" 小写命中）+ 命中词主题色高亮（徐先生肉眼确认）+ 点结果跳转（SearchSheet 关 +「返回上一阅读位置」出现 = jumpToLocator + pushHistory）+ canSearch gating（搜索图标在位）+ 键盘 `mInputShown=true`。

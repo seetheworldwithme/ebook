@@ -1,0 +1,226 @@
+package com.xuziyue.ebook.library
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xuziyue.ebook.model.Book
+import com.xuziyue.ebook.ui.BookCover
+import com.xuziyue.ebook.ui.relativeTime
+
+/**
+ * 书籍详情页（LIB-04）：元数据 / 进度 / 文件信息 / 书签·笔记数 / 继续阅读入口。
+ *
+ * 卡片点击进此；「继续阅读」→ reader（ReaderViewModel 自取 locator 恢复，详情页不传 locator）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BookDetailScreen(
+    onBack: () -> Unit,
+    onRead: () -> Unit,
+    viewModel: BookDetailViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(state.book?.title ?: "书籍详情") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        when {
+            state.loading -> CenterText(padding, "加载中…")
+            state.book == null -> CenterText(padding, "这本书不见了")
+            else -> DetailContent(state, padding, onRead)
+        }
+    }
+}
+
+@Composable
+private fun CenterText(padding: PaddingValues, text: String) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRead: () -> Unit) {
+    val book: Book = state.book!!
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+    ) {
+        // ① 元数据
+        Row {
+            BookCover(
+                coverPath = book.coverPath,
+                title = book.title,
+                modifier = Modifier.size(width = 120.dp, height = 168.dp),
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    book.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                book.authors.takeIf { it.isNotEmpty() }?.joinToString("，")?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                book.language?.let {
+                    Text(
+                        "语言：$it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+
+        book.description?.takeIf { it.isNotBlank() }?.let {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        SectionDivider()
+
+        // ② 阅读进度
+        SectionTitle("阅读进度")
+        Spacer(Modifier.height(8.dp))
+        val p = state.progression
+        if (p != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LinearProgressIndicator(
+                    progress = { p.toFloat() },
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("${(p * 100).toInt()}%", style = MaterialTheme.typography.bodyMedium)
+            }
+            book.lastOpenedAt?.let {
+                Text(
+                    "最近阅读：${relativeTime(it, System.currentTimeMillis())}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        } else {
+            Text(
+                "未开始",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        SectionDivider()
+
+        // ③ 文件信息（不展示路径 / contentHash——红线 #8：UI 不含完整路径；hash 对用户无意义）
+        SectionTitle("文件信息")
+        Spacer(Modifier.height(8.dp))
+        FileInfoRow("格式", "${book.format}（${book.mediaType}）")
+        FileInfoRow("大小", formatFileSize(book.fileSize))
+        FileInfoRow("导入时间", relativeTime(book.importedAt, System.currentTimeMillis()))
+
+        SectionDivider()
+
+        // ④ 书签 · 笔记数
+        SectionTitle("书签 · 笔记")
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "📑 ${state.bookmarkCount} 书签 · 🖊 ${state.annotationCount} 笔记",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        // ⑤ 继续阅读入口（有进度=继续，未读=开始）
+        Button(onClick = onRead, modifier = Modifier.fillMaxWidth()) {
+            Text(if (p != null) "继续阅读" else "开始阅读")
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.titleMedium)
+}
+
+@Composable
+private fun SectionDivider() {
+    Spacer(Modifier.height(16.dp))
+    HorizontalDivider()
+    Spacer(Modifier.height(12.dp))
+}
+
+@Composable
+private fun FileInfoRow(label: String, value: String) {
+    Row(modifier = Modifier.padding(vertical = 2.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(64.dp),
+        )
+        Text(value, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** 文件大小格式化（KB / MB）。 */
+private fun formatFileSize(bytes: Long): String {
+    val kb = bytes / 1024.0
+    return if (kb < 1024.0) "%.1f KB".format(kb) else "%.1f MB".format(kb / 1024.0)
+}

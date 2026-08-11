@@ -21,11 +21,21 @@ enum class LibrarySort { LAST_OPENED, IMPORTED, TITLE }
 enum class LibraryViewMode { LIST, GRID }
 
 /**
- * 书库页 ViewModel（LIB-01 / LIB-03）。
+ * 书库三入口筛选（LIB-02）：[key] 透传到 DAO 的 `CASE :filter`。
+ *
+ * - [RECENT]：打开过即算（`lastOpenedAt` 非空）。
+ * - [ALL]：全量（默认；新书导入后必可见）。
+ * - [FINISHED]：已读完（`status = FINISHED`）。
+ */
+enum class LibraryFilter(val key: String) { RECENT("RECENT"), ALL("ALL"), FINISHED("FINISHED") }
+
+/**
+ * 书库页 ViewModel（LIB-01 / LIB-02 / LIB-03）。
  *
  * - [query]：搜索关键词（书名 / 作者，DAO LIKE）。
- * - [sort] / [viewMode]：排序与视图模式（**本刀内存态**，未持久化；保位后续复用 DataStore 加 key）。
- * - [items]：query → DAO 过滤 → 内存排序（[sortItems]），5000 条内存排序 <5ms 无压力。
+ * - [filter]：三入口筛选（LIB-02）；[sort] / [viewMode]：排序与视图模式。
+ *   三者均**本刀内存态**，未持久化；保位后续复用 DataStore 加 key。
+ * - [items]：query + filter → DAO 过滤 → 内存排序（[sortItems]），5000 条内存排序 <5ms 无压力。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -34,17 +44,19 @@ class LibraryViewModel @Inject constructor(
 ) : ViewModel() {
 
     val query = MutableStateFlow("")
+    val filter = MutableStateFlow(LibraryFilter.ALL)
     val sort = MutableStateFlow(LibrarySort.LAST_OPENED)
     val viewMode = MutableStateFlow(LibraryViewMode.LIST)
 
+    // query/filter 变化触发 DAO 重查（响应式回推，满足 LIB-02「状态变化后列表实时刷新」）；sort 仅内存排序。
     val items: StateFlow<List<LibraryItem>> =
-        combine(
-            query.flatMapLatest { repository.observeLibraryItems(it.trim()) },
-            sort,
-        ) { list, s -> sortItems(list, s) }
+        combine(query, filter) { q, f -> q.trim() to f }
+            .flatMapLatest { (q, f) -> repository.observeLibraryItems(q, f.key) }
+            .combine(sort) { list, s -> sortItems(list, s) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun setQuery(value: String) { query.value = value }
+    fun setFilter(value: LibraryFilter) { filter.value = value }
     fun setSort(value: LibrarySort) { sort.value = value }
     fun toggleViewMode() {
         viewMode.value =

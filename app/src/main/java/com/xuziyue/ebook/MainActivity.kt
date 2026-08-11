@@ -6,7 +6,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +25,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -35,6 +33,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,8 +45,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -57,18 +55,19 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import coil3.compose.AsyncImage
 import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.data.bookIdOrNull
+import com.xuziyue.ebook.library.LibraryFilter
 import com.xuziyue.ebook.library.LibrarySort
 import com.xuziyue.ebook.library.LibraryViewMode
 import com.xuziyue.ebook.library.LibraryViewModel
 import com.xuziyue.ebook.model.LibraryItem
+import com.xuziyue.ebook.library.BookDetailScreen
 import com.xuziyue.ebook.reader.ReaderScreen
+import com.xuziyue.ebook.ui.BookCover
 import com.xuziyue.ebook.ui.relativeTime
 import com.xuziyue.ebook.ui.theme.EbookReaderTheme
 import dagger.hilt.android.AndroidEntryPoint
-import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 
@@ -76,7 +75,8 @@ import kotlinx.coroutines.launch
  * 单 Activity 入口。
  *
  * Navigation Compose：
- * - `library`：书库列表 + 导入入口（LIB-01 完整：列表/网格 + 封面 + 进度 + 最近阅读；LIB-03 搜索/排序）。
+ * - `library`：书库列表 + 导入入口（LIB-01 完整：列表/网格 + 封面 + 进度 + 最近阅读；LIB-02 三入口；LIB-03 搜索/排序）。
+ * - `detail/{bookId}`：书籍详情页（LIB-04）。卡片点击进此，"继续阅读"再进 reader。
  * - `reader/{bookId}`：阅读界面。bookId 作 route 参数，进程重建后 Navigation 自动恢复（design.md §6.5）。
  */
 @AndroidEntryPoint
@@ -115,7 +115,21 @@ private fun AppRoot(importBookUseCase: ImportBookUseCase) {
                             ?.let { navController.navigate("reader/$it") }
                     }
                 },
-                onOpenBook = { bookId -> navController.navigate("reader/$bookId") },
+                onOpenBook = { bookId -> navController.navigate("detail/$bookId") },
+            )
+        }
+        composable(
+            route = "detail/{bookId}",
+            arguments = listOf(navArgument("bookId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val bookId = backStackEntry.arguments?.getString("bookId")
+            if (bookId == null) {
+                navController.popBackStack()
+                return@composable
+            }
+            BookDetailScreen(
+                onBack = { navController.popBackStack() },
+                onRead = { navController.navigate("reader/$bookId") },
             )
         }
         composable(
@@ -133,9 +147,10 @@ private fun AppRoot(importBookUseCase: ImportBookUseCase) {
 }
 
 /**
- * 书库页（LIB-01 / LIB-03）。
+ * 书库页（LIB-01 / LIB-02 / LIB-03）。
  *
  * 顶栏：标题 + 排序（DropdownMenu：最近阅读/导入时间/书名）+ 视图切换（列表/网格）+ 导入。
+ * 三入口 TabRow（LIB-02）：最近阅读（打开过即算）/ 全部（默认）/ 已读完。
  * 默认列表（横向卡：封面缩略 + 书名 + 作者 + 进度条 + 最近阅读时间）；可切网格（封面墙）。
  * 搜索：书名 / 作者（DAO LIKE，忽略大小写；中文直接匹配）。
  */
@@ -149,6 +164,7 @@ private fun LibraryScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
     val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
     val items by viewModel.items.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // SAF 文件选择器（红线 #3：不申请 MANAGE_EXTERNAL_STORAGE，只用 ACTION_OPEN_DOCUMENT）。
@@ -210,16 +226,38 @@ private fun LibraryScreen(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             ) { Text("读内置样本 Alice（EPUB2）") }
 
+            // 三入口（LIB-02）：最近阅读 / 全部 / 已读完
+            PrimaryTabRow(selectedTabIndex = filter.ordinal) {
+                Tab(
+                    selected = filter == LibraryFilter.RECENT,
+                    onClick = { viewModel.setFilter(LibraryFilter.RECENT) },
+                    text = { Text("最近阅读") },
+                )
+                Tab(
+                    selected = filter == LibraryFilter.ALL,
+                    onClick = { viewModel.setFilter(LibraryFilter.ALL) },
+                    text = { Text("全部") },
+                )
+                Tab(
+                    selected = filter == LibraryFilter.FINISHED,
+                    onClick = { viewModel.setFilter(LibraryFilter.FINISHED) },
+                    text = { Text("已读完") },
+                )
+            }
+
             HorizontalDivider()
 
             when {
                 items.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            if (query.isBlank()) "还没有书，导入一本开始吧"
-                            else "没找到匹配「$query」的书",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        // 空态文案按筛选维度区分（LIB-02：已读完/最近阅读空 ≠ 没书）
+                        val emptyText = when {
+                            query.isNotBlank() -> "没找到匹配「$query」的书"
+                            filter == LibraryFilter.FINISHED -> "还没有读完的书"
+                            filter == LibraryFilter.RECENT -> "还没有最近阅读的书"
+                            else -> "还没有书，导入一本开始吧"
+                        }
+                        Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 viewMode == LibraryViewMode.LIST -> {
@@ -361,36 +399,6 @@ private fun LibraryGridCard(item: LibraryItem, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-/**
- * 封面（Coil 加载 `filesDir/covers/{bookId}.png`，LIB-01）。
- *
- * coverPath 为空（封面缺失）时用占位：surfaceVariant 底 + 书名首字。
- * 尺寸由调用方经 [modifier] 控制（列表固定 48×66，网格 fillMaxWidth + aspectRatio 0.66）。
- */
-@Composable
-private fun BookCover(coverPath: String?, title: String, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(4.dp)
-    if (coverPath != null) {
-        AsyncImage(
-            model = File(coverPath),
-            contentDescription = "《$title》封面",
-            modifier = modifier.clip(shape),
-            contentScale = ContentScale.Crop,
-        )
-    } else {
-        Box(
-            modifier = modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                title.firstOrNull()?.toString() ?: "?",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

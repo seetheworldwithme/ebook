@@ -106,7 +106,7 @@ class BookDaoTest {
         dao.insert(book(id = "a", hash = "ha"))
         dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L))
         progressDao.upsert(ReadingProgressEntity("b", "loc", 0.65, 1L, null))
-        val items = dao.observeLibraryItems("").first()
+        val items = dao.observeLibraryItems("", "ALL").first()
         assertEquals(2, items.size)
         assertEquals(0.65, items.first { it.book.id == "b" }.progression!!, 0.0001)
         assertNull(items.first { it.book.id == "a" }.progression)
@@ -116,21 +116,21 @@ class BookDaoTest {
     fun `observeLibraryItems 按书名子串搜索`() = runTest {
         dao.insert(book(id = "a", hash = "ha", title = "山海经"))
         dao.insert(book(id = "b", hash = "hb", title = "红楼梦"))
-        assertEquals(listOf("a"), dao.observeLibraryItems("山海").first().map { it.book.id })
+        assertEquals(listOf("a"), dao.observeLibraryItems("山海", "ALL").first().map { it.book.id })
     }
 
     @Test
     fun `observeLibraryItems 按 authors JSON 子串搜索`() = runTest {
         dao.insert(book(id = "a", hash = "ha", authors = listOf("曹雪芹", "高鹗")))
         dao.insert(book(id = "b", hash = "hb", authors = listOf("吴承恩")))
-        assertEquals(listOf("a"), dao.observeLibraryItems("曹雪").first().map { it.book.id })
+        assertEquals(listOf("a"), dao.observeLibraryItems("曹雪", "ALL").first().map { it.book.id })
     }
 
     @Test
     fun `observeLibraryItems 搜索忽略 ASCII 大小写`() = runTest {
         dao.insert(book(id = "a", hash = "ha", title = "Alice"))
         dao.insert(book(id = "b", hash = "hb", title = "Bob"))
-        assertEquals(listOf("a"), dao.observeLibraryItems("alice").first().map { it.book.id })
+        assertEquals(listOf("a"), dao.observeLibraryItems("alice", "ALL").first().map { it.book.id })
     }
 
     @Test
@@ -138,6 +138,59 @@ class BookDaoTest {
         dao.insert(book(id = "a", hash = "ha", lastOpenedAt = null, importedAt = 3000L))
         dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L))
         dao.insert(book(id = "c", hash = "hc", lastOpenedAt = 1000L))
-        assertEquals(listOf("b", "c", "a"), dao.observeLibraryItems("").first().map { it.book.id })
+        assertEquals(listOf("b", "c", "a"), dao.observeLibraryItems("", "ALL").first().map { it.book.id })
+    }
+
+    // ===== observeLibraryItems filter（LIB-02 三入口）=====
+
+    @Test
+    fun `filter RECENT 只返回打开过的（lastOpenedAt 非空），按倒序`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", lastOpenedAt = null, status = ReadingStatus.UNREAD))
+        dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L, status = ReadingStatus.READING))
+        dao.insert(book(id = "c", hash = "hc", lastOpenedAt = 1000L, status = ReadingStatus.FINISHED))
+        assertEquals(
+            listOf("b", "c"),
+            dao.observeLibraryItems("", "RECENT").first().map { it.book.id },
+        )
+    }
+
+    @Test
+    fun `filter FINISHED 只返回 status 已读完`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", status = ReadingStatus.UNREAD))
+        dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L, status = ReadingStatus.READING))
+        dao.insert(book(id = "c", hash = "hc", status = ReadingStatus.FINISHED))
+        assertEquals(
+            listOf("c"),
+            dao.observeLibraryItems("", "FINISHED").first().map { it.book.id },
+        )
+    }
+
+    @Test
+    fun `filter ALL 返回全部并保持排序`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", lastOpenedAt = null))
+        dao.insert(book(id = "b", hash = "hb", lastOpenedAt = 2000L, status = ReadingStatus.FINISHED))
+        assertEquals(
+            listOf("b", "a"),
+            dao.observeLibraryItems("", "ALL").first().map { it.book.id },
+        )
+    }
+
+    @Test
+    fun `filter RECENT 叠加搜索`() = runTest {
+        dao.insert(book(id = "a", hash = "ha", title = "三体", lastOpenedAt = null))
+        dao.insert(book(id = "b", hash = "hb", title = "三国演义", lastOpenedAt = 2000L))
+        dao.insert(book(id = "c", hash = "hc", title = "三体后传", lastOpenedAt = 1000L))
+        // 「三体」命中 a / c；RECENT 排除未打开的 a → 只剩 c
+        assertEquals(
+            listOf("c"),
+            dao.observeLibraryItems("三体", "RECENT").first().map { it.book.id },
+        )
+    }
+
+    @Test
+    fun `observeById 响应式返回单本`() = runTest {
+        dao.insert(book(id = "a", hash = "ha"))
+        assertEquals("a", dao.observeById("a").first()?.id)
+        assertNull(dao.observeById("不存在").first())
     }
 }
