@@ -58,6 +58,8 @@ class AnnotationRepository(
 
     suspend fun updateNote(id: String, note: String?) = dao.updateNote(id, note, clock())
 
+    suspend fun updateColor(id: String, color: HighlightColor) = dao.updateColor(id, color, clock())
+
     suspend fun softDelete(id: String) = dao.softDelete(id, clock())
 
     suspend fun softDeleteAllForBook(bookId: String) = dao.softDeleteAllForBook(bookId, clock())

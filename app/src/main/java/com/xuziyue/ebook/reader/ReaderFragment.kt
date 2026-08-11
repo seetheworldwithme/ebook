@@ -1,5 +1,8 @@
 package com.xuziyue.ebook.reader
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
 import android.os.Bundle
 import android.view.ActionMode
 import android.view.LayoutInflater
@@ -152,9 +155,14 @@ class ReaderFragment : Fragment() {
 
     private val selectionActionModeCallback = object : ActionMode.Callback {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-            // 能力矩阵 gating（红线 #2）：canHighlight=false 时不加「高亮」菜单项（PDF V1 生效）。
-            if (viewModel.capabilities.value.canHighlight) {
+            // 能力矩阵 gating（红线 #2）：文字选择相关能力为 false 时隐藏对应菜单项（PDF V1 生效）。
+            val caps = viewModel.capabilities.value
+            if (caps.canHighlight) {
                 menu.add(0, MENU_HIGHLIGHT_ID, 0, "高亮")
+            }
+            if (caps.canCopyShare) {
+                menu.add(0, MENU_COPY_ID, 0, "复制")
+                menu.add(0, MENU_SHARE_ID, 0, "分享")
             }
             return true
         }
@@ -162,21 +170,56 @@ class ReaderFragment : Fragment() {
         override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-            if (item.itemId == MENU_HIGHLIGHT_ID) {
-                lifecycleScope.launch {
-                    val selection = navigator?.currentSelection()
-                    if (selection != null) {
-                        viewModel.addHighlight(selection.locator)
-                        navigator?.clearSelection()
+            when (item.itemId) {
+                MENU_HIGHLIGHT_ID -> {
+                    lifecycleScope.launch {
+                        val selection = navigator?.currentSelection()
+                        if (selection != null) {
+                            viewModel.addHighlight(selection.locator)
+                            navigator?.clearSelection()
+                        }
+                        mode.finish()
                     }
-                    mode.finish()
+                    return true
                 }
-                return true
+                MENU_COPY_ID -> {
+                    lifecycleScope.launch {
+                        copySelection()
+                        mode.finish()
+                    }
+                    return true
+                }
+                MENU_SHARE_ID -> {
+                    lifecycleScope.launch {
+                        shareSelection()
+                        mode.finish()
+                    }
+                    return true
+                }
             }
             return false
         }
 
         override fun onDestroyActionMode(mode: ActionMode) {}
+    }
+
+    /** 复制选中文字到系统剪贴板（READ-07；空选区不操作）。 */
+    private suspend fun copySelection() {
+        val text = navigator?.currentSelection()?.locator?.text?.highlight
+        if (text.isNullOrBlank()) return
+        val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("ebook", text))
+    }
+
+    /** 系统分享选中文字（READ-07；空选区不操作；交系统 chooser 选择目标）。 */
+    private suspend fun shareSelection() {
+        val text = navigator?.currentSelection()?.locator?.text?.highlight
+        if (text.isNullOrBlank()) return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(intent, "分享选中文字"))
     }
 
     @OptIn(ExperimentalReadiumApi::class)
@@ -194,5 +237,7 @@ class ReaderFragment : Fragment() {
         const val NAV_TAG = "epub_navigator"
         const val DECORATION_GROUP = "highlights"
         const val MENU_HIGHLIGHT_ID = 1
+        const val MENU_COPY_ID = 2
+        const val MENU_SHARE_ID = 3
     }
 }

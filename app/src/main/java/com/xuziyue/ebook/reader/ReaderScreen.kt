@@ -1,6 +1,7 @@
 package com.xuziyue.ebook.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +69,7 @@ import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
@@ -208,6 +210,7 @@ fun ReaderScreen(
                 onJump = { viewModel.jumpToAnnotation(it); showAnnotations = false },
                 onEdit = { editingAnnotation = it },
                 onDelete = { viewModel.removeAnnotation(it.id) },
+                onColorChange = { item, color -> viewModel.updateAnnotationColor(item.id, color) },
                 onClearAll = { viewModel.clearHighlights(); showAnnotations = false },
                 onDismiss = { showAnnotations = false },
             )
@@ -719,6 +722,7 @@ private fun AnnotationSheet(
     onJump: (AnnotationItem) -> Unit,
     onEdit: (AnnotationItem) -> Unit,
     onDelete: (AnnotationItem) -> Unit,
+    onColorChange: (AnnotationItem, HighlightColor) -> Unit,
     onClearAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -751,12 +755,25 @@ private fun AnnotationSheet(
                             .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 色点（高亮颜色）
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .background(annotation.color.toComposeColor(), CircleShape),
-                        )
+                        // 四色调色板（当前色加环高亮，点击切换高亮颜色）
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            HighlightColor.values().forEach { color ->
+                                val selected = color == annotation.color
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 4.dp)
+                                        .size(if (selected) 16.dp else 12.dp)
+                                        .background(color.toComposeColor(), CircleShape)
+                                        .then(
+                                            if (selected) {
+                                                Modifier.border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                            } else {
+                                                Modifier.clickable { onColorChange(annotation, color) }
+                                            },
+                                        ),
+                                )
+                            }
+                        }
                         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(
                                 annotation.selectedText.ifBlank { "（空选区）" },

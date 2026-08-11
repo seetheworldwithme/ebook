@@ -9,6 +9,7 @@ import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
+import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderCapabilities
 import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
@@ -311,6 +312,11 @@ class ReaderViewModel @Inject constructor(
     /** 编辑笔记（覆盖 + 刷新 updatedAt；observe 回流更新列表）。 */
     fun updateAnnotationNote(id: String, note: String?) {
         viewModelScope.launch { annotationRepository.updateNote(id, note) }
+    }
+
+    /** 切换高亮颜色（落盘 → observe 回流 → decorations 派生自动重渲染高亮底色）。 */
+    fun updateAnnotationColor(id: String, color: HighlightColor) {
+        viewModelScope.launch { annotationRepository.updateColor(id, color) }
     }
 
     /** 跳到批注位置（先记当前位置到 history，再发指令）。 */

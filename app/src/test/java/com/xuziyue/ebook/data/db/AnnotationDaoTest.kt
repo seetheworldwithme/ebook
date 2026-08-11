@@ -88,6 +88,16 @@ class AnnotationDaoTest {
     }
 
     @Test
+    fun `updateColor 覆盖颜色并刷新 updatedAt`() = runTest {
+        seedBook("b1")
+        annotationDao.upsert(annotation("a1", "b1", color = HighlightColor.YELLOW))
+        annotationDao.updateColor("a1", HighlightColor.PINK, 6000L)
+        val got = annotationDao.getById("a1")!!
+        assertEquals(HighlightColor.PINK, got.color)
+        assertEquals(6000L, got.updatedAt)
+    }
+
+    @Test
     fun `softDeleteAllForBook 清空活跃批注`() = runTest {
         seedBook("b1")
         annotationDao.upsert(annotation("a1", "b1"))

@@ -96,6 +96,14 @@ class AnnotationRepositoryTest {
     }
 
     @Test
+    fun `updateColor 覆盖颜色`() = runTest {
+        seedBook("b1")
+        val id = repo.add("b1", selectionLocator("ch1", "sel"))
+        repo.updateColor(id, HighlightColor.PINK)
+        assertEquals(HighlightColor.PINK, repo.observe("b1").first()[0].color)
+    }
+
+    @Test
     fun `softDelete 使 observe 清空`() = runTest {
         seedBook("b1")
         val id = repo.add("b1", selectionLocator("ch1", "sel"))

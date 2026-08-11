@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 12 | 1 |
+| P0（MVP 必做） | 28 | 13 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 12 | 1 |
+| 合计 | 42 | 13 | 0 |
 
-> 当前进度：12 ✅ / 1 🚧（第一切片 11 项全真机转 ✅ + READ-06 书签真机转 ✅；READ-07 高亮笔记落盘持久化部分真机验过，仅剩复制/分享 + 调色板，故 🚧）。详见文末变更记录。
+> 当前进度：13 ✅ / 0 🚧（第一切片 11 项全真机转 ✅ + READ-06 书签真机转 ✅ + READ-07 高亮/笔记/复制/分享/调色板转 ✅；复制/分享/调色板仅单测+编译通过，真机回归待补）。详见文末变更记录。
 
 ---
 
@@ -72,7 +72,7 @@
 | READ-04 | ✅ | 分页与纵向滚动两种模式。刀3：ReaderScrollMode 接 EpubPreferences.scroll + 排版面板「翻页方式」。真机：切模式实时生效 + 双向保位（3%↔3%）+ 滚动连续/分页翻页 + 高亮跨模式存活 + 杀重启保模式。FXL 上 scroll 无效（Readium 行为，已知边界留 V1） |
 | READ-05 | ⬜ | 书内搜索（PDF 若未通过验证则明确不显示入口） |
 | READ-06 | ✅ | 书签（添加 / 取消 / 列表 / 跳回，重复位置不重复生成）。刀 READ-06/07：BookmarkEntity 表 + toggle 去重（href+progression ε）+ 顶栏 toggle + BookmarkSheet。真机（vivo V2329A）全过：加/取消/去重/列表/跳回（进度回 3%）/isBookmarked 跟位置响应式/杀重启书签+进度不丢 |
-| READ-07 | 🚧 | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用）。刀 READ-06/07：高亮落 Annotation 表 + DB 驱动渲染（根治红线 #9 内存态）+ AnnotationSheet + 笔记编辑；**复制/系统分享 + 调色板留下一刀**，故 🚧 |
+| READ-07 | ✅ | 高亮、笔记、复制、系统分享（PDF 仅在文字选择验证通过后启用）。刀 READ-06/07：高亮落 Annotation 表 + DB 驱动渲染（根治红线 #9 内存态）+ AnnotationSheet + 笔记编辑；刀 READ-07 收尾：选中菜单「复制」(ClipboardManager)/「分享」(ACTION_SEND+chooser，canCopyShare 首次消费 gating) + 四色调色板（updateColor 全链路 DAO→Repo→VM→AnnotationSheet，DB 驱动回流自动重渲染）。仅单测+编译，真机回归待补 |
 | READ-08 | ✅ | 退出阅读时自动保存位置（防抖保存 + 后台/销毁前强制保存）。刀1：防抖 1.5s + flushLocator 走 ReadingProgressRepository；真机回归翻页后强杀恢复通过 |
 
 ### EPUB / TXT 排版（TYPE）
@@ -166,6 +166,12 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-11）：**READ-07 收尾转 ✅：选中菜单「复制」/「分享」+ 高亮四色调色板。仅单测+编译+lint 全绿，真机回归待补。** 补齐 READ-07 剩余口径（上一刀 🚧 留的两件）：
+> **① 复制 / 系统分享（canCopyShare 首次消费，红线 #2）**：`ReaderFragment` ActionMode `onCreateActionMode` 在「高亮」之外，按 `capabilities.canCopyShare`（EPUB=true / PDF=false，字段早已建但 UI 零引用）gating 加「复制」「分享」两项（`MENU_COPY_ID=2 / MENU_SHARE_ID=3`）；`onActionItemClicked` 取 `navigator.currentSelection().locator.text.highlight`（与 addHighlight 同口径）→ 复制走 `ClipboardManager.setPrimaryClip(ClipData.newPlainText)`、分享走 `Intent.ACTION_SEND + createChooser`；空选区不操作。
+> **② 高亮调色板（updateColor 全链路，根治 DAO L30 注释「留调色板那刀」）**：`AnnotationDao.updateColor`（@Query，TypeConverter 自动 HighlightColor↔name——**不改 schema，无需 migration/重导 schema**）→ `AnnotationRepository.updateColor` → `ReaderViewModel.updateAnnotationColor`；UI 把 `AnnotationSheet` 列表项只读色点换成**四色横排选择条**（`HighlightColor.values()` 每色 12dp 圆点，当前色 16dp + outline 环，点击切换）。**刷新自动**：`decorations` 由 `annotations` StateFlow 派生，DB 改 color → observe 回流 → applyDecorations 重注入，无需 Fragment 加新订阅。
+> **测试**：`:app:testDebugUnitTest` 新增 2（AnnotationDaoTest `updateColor 覆盖颜色并刷新 updatedAt` + AnnotationRepositoryTest `updateColor 覆盖颜色`），`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL。**踩坑**：首次 `assembleDebug` 经 `| tail` 管道吞了 gradle 失败码（误判通过），`testDebugUnitTest` 报 `currentSelection()` suspend 不能在普通 fun 调 → copy/share 分支改 `lifecycleScope.launch` 包裹 + 方法改 suspend 修复（与 highlight 分支一致）；教训：gradle 命令勿裸接管道，用 `>file 2>&1; echo EXIT:$?`。
+> **仅单测+编译+lint，未真机回归**——待真机验「① 选中文字→复制可粘贴 ② 选中→分享弹系统 chooser ③ 笔记 sheet 点四色切换→正文高亮底色实时变（DB 驱动回流）④ 杀重启改色保留」兜底（功能已转 ✅）。
 
 > 实现状态（2026-08-11）：**真机回归（vivo V2329A）全过：READ-06 书签 转 ✅；READ-07 高亮笔记落盘 持久化部分真机验过（维持 🚧，仅剩复制/分享 + 调色板）。** 覆盖设备上**真实 v1 库**（books/progress 各 3 行，user_version=1）覆盖安装 v2：
 > **① v1→v2 迁移保数据（REL-03）**：覆盖安装后启动，`user_version 1→2`、books/reading_progress 各 3 行不丢、bookmarks/annotations 表建好、无崩溃——`MIGRATION_1_2` 真实迁移成功（比单测更强：真实 v1 数据 + 真实 SQLite）。

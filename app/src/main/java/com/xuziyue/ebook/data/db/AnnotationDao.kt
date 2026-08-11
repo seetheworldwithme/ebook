@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.xuziyue.ebook.model.HighlightColor
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -27,9 +28,13 @@ interface AnnotationDao {
     @Query("SELECT * FROM annotations WHERE id = :id")
     suspend fun getById(id: String): AnnotationEntity?
 
-    /** 编辑笔记（覆盖 + 刷新 updatedAt）。颜色切换留调色板那刀，届时加 updateColor。 */
+    /** 编辑笔记（覆盖 + 刷新 updatedAt）。 */
     @Query("UPDATE annotations SET note = :note, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateNote(id: String, note: String?, updatedAt: Long)
+
+    /** 切换高亮颜色（覆盖 color + 刷新 updatedAt；TypeConverter 自动处理 HighlightColor↔name 字符串）。 */
+    @Query("UPDATE annotations SET color = :color, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateColor(id: String, color: HighlightColor, updatedAt: Long)
 
     /** 软删除单条（置 deletedAt；observe 不再返回）。 */
     @Query("UPDATE annotations SET deletedAt = :deletedAt WHERE id = :id")
