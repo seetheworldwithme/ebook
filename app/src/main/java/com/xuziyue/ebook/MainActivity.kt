@@ -28,9 +28,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -53,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -73,6 +78,9 @@ import com.xuziyue.ebook.library.LibraryViewModel
 import com.xuziyue.ebook.model.LibraryItem
 import com.xuziyue.ebook.library.BookDetailScreen
 import com.xuziyue.ebook.reader.ReaderScreen
+import com.xuziyue.ebook.settings.LicensesScreen
+import com.xuziyue.ebook.settings.PrivacyScreen
+import com.xuziyue.ebook.settings.SettingsScreen
 import com.xuziyue.ebook.ui.BookCover
 import com.xuziyue.ebook.ui.relativeTime
 import com.xuziyue.ebook.ui.resolve
@@ -157,6 +165,7 @@ private fun AppRoot(
                 onConsumeImport = onConsumeImport,
                 onOpenBook = { bookId -> navController.navigate("detail/$bookId") },
                 onOpenReader = { bookId -> navController.navigate("reader/$bookId") },
+                onOpenSettings = { navController.navigate("settings") },
             )
         }
         composable(
@@ -184,6 +193,20 @@ private fun AppRoot(
             }
             ReaderScreen(bookId = bookId, onBack = { navController.popBackStack() })
         }
+        // SET-05：设置 / 隐私说明 / 开源许可证
+        composable("settings") {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPrivacy = { navController.navigate("privacy") },
+                onOpenLicenses = { navController.navigate("licenses") },
+            )
+        }
+        composable("privacy") {
+            PrivacyScreen(onBack = { navController.popBackStack() })
+        }
+        composable("licenses") {
+            LicensesScreen(onBack = { navController.popBackStack() })
+        }
     }
 }
 
@@ -201,6 +224,7 @@ private fun LibraryScreen(
     onConsumeImport: () -> Unit,
     onOpenBook: (String) -> Unit,
     onOpenReader: (String) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val viewModel: LibraryViewModel = hiltViewModel()
     val query by viewModel.query.collectAsStateWithLifecycle()
@@ -286,6 +310,10 @@ private fun LibraryScreen(
                     OutlinedButton(onClick = {
                         launcher.launch(arrayOf("application/epub+zip", "text/plain", "*/*"))
                     }) { Text(stringResource(R.string.library_import)) }
+                    // SET-05：设置入口（隐私说明 / 开源许可证 / 崩溃日志）。
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.library_settings))
+                    }
                 }
             }
 
@@ -376,9 +404,15 @@ private fun SortMenuItem(
     value: LibrarySort,
     onSelect: (LibrarySort) -> Unit,
 ) {
+    val isSelected = current == value
+    // SET-03：选中态不只靠「✓」视觉前缀，补 stateDescription 让 TalkBack 读「已选中」。
+    val selectedDesc = stringResource(R.string.common_selected)
     DropdownMenuItem(
-        text = { Text(if (current == value) "✓ $label" else label) },
+        text = { Text(if (isSelected) "✓ $label" else label) },
         onClick = { onSelect(value) },
+        modifier = Modifier.semantics {
+            if (isSelected) stateDescription = selectedDesc
+        },
     )
 }
 

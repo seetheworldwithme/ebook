@@ -3,6 +3,7 @@
 
     <!-- Common -->
     <string name="common_follow_system">Follow system</string>
+    <string name="common_selected">Selected</string>
 
     <!-- Library (LIB) -->
     <string name="library_title">Library</string>
@@ -179,4 +180,30 @@
     <string name="time_hours_ago">%1$d hours ago</string>
     <string name="time_yesterday">yesterday</string>
     <string name="time_days_ago">%1$d days ago</string>
+
+    <!-- Settings, privacy & licenses (SET-05) -->
+    <string name="library_settings">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_privacy">Privacy Notice</string>
+    <string name="settings_licenses">Open Source Licenses</string>
+    <string name="settings_crash_log">Crash Log</string>
+    <string name="settings_crash_log_desc">Crash logs are stored locally only and never uploaded. When enabled, the app records anonymized error info on unexpected exits (no book content, excerpts, or full file paths), which you can manually share with the developer.</string>
+    <string name="settings_crash_log_enable">Record crash logs</string>
+    <string name="settings_crash_log_share">Share crash log</string>
+    <!-- Privacy page -->
+    <string name="privacy_section_data">Data Storage</string>
+    <string name="privacy_data_body">This app is a local-first, offline ebook reader. Your book files, reading progress, bookmarks, and highlight notes are all stored in a local database on your device. Nothing is uploaded to any server, and no account is required.</string>
+    <string name="privacy_section_network">Network Permission</string>
+    <string name="privacy_network_body">This app does not request the INTERNET permission. Core reading features (opening books, turning pages, searching, annotating, importing) work fully offline. External links inside books are handed to the system browser; the app itself makes no network requests.</string>
+    <string name="privacy_section_crash">Crash Log</string>
+    <string name="privacy_crash_body">Crash logging is off by default. When enabled, the app writes anonymized error info to a local file on unexpected exits — no book content, excerpts, or full file paths, and nothing is uploaded. You can manually share the crash log from Settings at any time, or turn this feature off.</string>
+    <string name="privacy_section_deps">Third-Party Dependencies</string>
+    <string name="privacy_deps_body">This app uses open-source libraries including Readium and Jetpack Compose. See the "Open Source Licenses" page for the full dependency list and licenses.</string>
+    <!-- Licenses page -->
+    <string name="licenses_note">This app uses the following open-source libraries. Tap to view the full license text.</string>
+    <string name="licenses_expand">Expand license</string>
+    <string name="licenses_collapse">Collapse license</string>
+    <string name="licenses_transitive"> (transitive)</string>
+    <string name="licenses_load_failed">Failed to load license text</string>
 </resources>

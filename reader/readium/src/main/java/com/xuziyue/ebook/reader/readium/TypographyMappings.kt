@@ -16,16 +16,24 @@ import org.readium.r2.shared.ExperimentalReadiumApi
  * Readium 知识内聚在 :reader:readium 模块（沿用 `Publication.toReaderCapabilities()` 先例）；
  * :app / :core:model 不感知 Readium 类型。
  *
- * 关键点：[ReaderTheme.SYSTEM] 无对应 Readium 枚举——在此据 [isSystemDark]
- * 解析为 [Theme.DARK] / [Theme.LIGHT]。SYSTEM 持久化是稳定值，运行时每次解析，
- * 故系统暗色切换后重新调用本映射即可得到正确主题（design.md §4.4 TYPE-02「跟随系统」）。
+ * 关键点：
+ * 1. [ReaderTheme.SYSTEM] 无对应 Readium 枚举——在此据 [isSystemDark]
+ *    解析为 [Theme.DARK] / [Theme.LIGHT]。SYSTEM 持久化是稳定值，运行时每次解析，
+ *    故系统暗色切换后重新调用本映射即可得到正确主题（design.md §4.4 TYPE-02「跟随系统」）。
+ * 2. SET-03：[fontSize]（应用内滑块倍率）与 [systemFontScale]（Android 系统无障碍字号倍率）
+ *    **相乘**后喂给 Readium。WebView 默认 textZoom=100 不继承系统 fontScale，故需显式折算，
+ *    使视障用户调大系统字号时阅读器正文同步放大。滑块 null（引擎默认 1.0）时正文直接跟随系统。
  *
  * @param isSystemDark 当前系统是否暗色模式（由 UI 层用 `isSystemInDarkTheme()` 传入）。
+ * @param systemFontScale Android 系统字号倍率（由 UI 层用 `LocalDensity.current.fontScale` 传入，默认 1.0）。
  */
 @OptIn(ExperimentalReadiumApi::class)
-fun ReaderTypography.toEpubPreferences(isSystemDark: Boolean): EpubPreferences =
+fun ReaderTypography.toEpubPreferences(
+    isSystemDark: Boolean,
+    systemFontScale: Float = 1f,
+): EpubPreferences =
     EpubPreferences(
-        fontSize = fontSize,
+        fontSize = (fontSize ?: 1.0) * systemFontScale,
         fontFamily = fontFamily?.let { FontFamily(it) },
         fontWeight = fontWeight,
         lineHeight = lineHeight,

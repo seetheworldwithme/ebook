@@ -80,6 +80,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -153,6 +154,12 @@ fun ReaderScreen(
     val systemDark = isSystemInDarkTheme()
     LaunchedEffect(systemDark) {
         viewModel.setSystemDark(systemDark)
+    }
+
+    // SET-03：跟随系统字号——WebView 不继承系统 fontScale，需显式折算进 Readium fontSize。
+    val systemFontScale = LocalDensity.current.fontScale
+    LaunchedEffect(systemFontScale) {
+        viewModel.setSystemFontScale(systemFontScale)
     }
 
     // TYPE-03：亮度 / 常亮 / 方向应用到 Window（仅在阅读器内生效，退出恢复系统）。

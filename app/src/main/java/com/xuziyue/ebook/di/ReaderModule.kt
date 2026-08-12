@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.dataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import com.xuziyue.ebook.data.AppSettingsRepository
 import com.xuziyue.ebook.data.BookFileImporter
 import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
@@ -98,6 +99,13 @@ object ReaderModule {
     fun provideReaderDisplaySettingsRepository(
         dataStore: DataStore<Preferences>,
     ): ReaderDisplaySettingsRepository = ReaderDisplaySettingsRepository(dataStore)
+
+    /** 应用级设置仓库（SET-05 崩溃日志开关）：复用同一个全局 DataStore。 */
+    @Provides
+    @Singleton
+    fun provideAppSettingsRepository(
+        dataStore: DataStore<Preferences>,
+    ): AppSettingsRepository = AppSettingsRepository(dataStore)
 
     @Provides
     @Singleton

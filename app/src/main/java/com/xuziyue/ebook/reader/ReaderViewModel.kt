@@ -116,12 +116,16 @@ class ReaderViewModel @Inject constructor(
     /** 当前系统是否暗色（由 ReaderScreen 据 isSystemInDarkTheme 推入），用于解析 [ReaderTheme.SYSTEM]。 */
     private val _systemDark = MutableStateFlow(false)
 
+    /** SET-03：Android 系统字号倍率（由 ReaderScreen 据 LocalDensity.fontScale 推入），折算进 Readium fontSize。 */
+    private val _systemFontScale = MutableStateFlow(1f)
+
     /**
-     * 实际喂给 Readium 的排版偏好：[typography] 据系统暗色解析为 [EpubPreferences]
-     * （[ReaderTheme.SYSTEM] → DARK/LIGHT）。ReaderFragment collect 本 flow → submitPreferences 实时生效。
+     * 实际喂给 Readium 的排版偏好：[typography] 据系统暗色 + 系统字号倍率解析为 [EpubPreferences]
+     * （[ReaderTheme.SYSTEM] → DARK/LIGHT；fontSize × systemFontScale → SET-03 跟随系统字号）。
+     * ReaderFragment collect 本 flow → submitPreferences 实时生效。
      */
     val preferences: StateFlow<EpubPreferences> =
-        combine(typography, _systemDark) { t, dark -> t.toEpubPreferences(dark) }
+        combine(typography, _systemDark, _systemFontScale) { t, dark, scale -> t.toEpubPreferences(dark, scale) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default.toEpubPreferences(isSystemDark = false))
 
     /** 当前打开的书 id（Flow 源，供 bookmarks/annotations flatMapLatest 切书时重订阅）。 */
@@ -320,6 +324,11 @@ class ReaderViewModel @Inject constructor(
     /** 推入系统暗色状态（ReaderScreen 据 isSystemInDarkTheme 调），用于解析 [ReaderTheme.SYSTEM]。 */
     fun setSystemDark(isDark: Boolean) {
         _systemDark.value = isDark
+    }
+
+    /** SET-03：推入系统字号倍率（ReaderScreen 据 LocalDensity.fontScale 调），折算进 Readium fontSize。 */
+    fun setSystemFontScale(scale: Float) {
+        _systemFontScale.value = scale
     }
 
     fun changeFontSize(delta: Double) = updateTypography {

@@ -34,7 +34,9 @@ class TypographyMappingsTest {
     fun `全 null 偏好映射为全 null 的 EpubPreferences（走引擎默认）`() {
         val prefs = ReaderTypography().toEpubPreferences(isSystemDark = false)
 
-        assertNull(prefs.fontSize)
+        // SET-03：fontSize 不再为 null——默认 systemFontScale=1f 时折算为 1.0（与 null 视觉等价，
+        // ReadiumCSS 基础字号 × 1.0 = 基础字号）。其他字段仍为 null（引擎默认）。
+        assertEquals(1.0, prefs.fontSize!!, 1e-9)
         assertNull(prefs.fontFamily)
         assertNull(prefs.fontWeight)
         assertNull(prefs.lineHeight)
@@ -128,5 +130,26 @@ class TypographyMappingsTest {
             Theme.DARK,
             ReaderTypography.Default.toEpubPreferences(isSystemDark = true).theme,
         )
+    }
+
+    // ===== SET-03：正文跟随系统字号（fontSize × systemFontScale）=====
+
+    @Test
+    fun `SET-03 默认 systemFontScale 不改变 fontSize（向后兼容）`() {
+        // 不传 systemFontScale（默认 1f）时行为与改前一致。
+        assertEquals(1.3, ReaderTypography(fontSize = 1.3).toEpubPreferences(false).fontSize!!, 1e-9)
+    }
+
+    @Test
+    fun `SET-03 fontSize=null 时正文直接跟随系统字号`() {
+        // 滑块未设（引擎默认 1.0），系统字号 1.3 → 正文 1.3 倍。
+        // delta=1e-5：systemFontScale 是 Float，乘入 Double 后存在 Float 精度差（~5e-8）。
+        assertEquals(1.3, ReaderTypography(fontSize = null).toEpubPreferences(false, 1.3f).fontSize!!, 1e-5)
+    }
+
+    @Test
+    fun `SET-03 滑块与系统字号相乘`() {
+        // 滑块 2.0 × 系统 1.3 = 2.6（应用内微调叠在全局基线上）。
+        assertEquals(2.6, ReaderTypography(fontSize = 2.0).toEpubPreferences(false, 1.3f).fontSize!!, 1e-5)
     }
 }

@@ -3,6 +3,7 @@
 
     <!-- 通用 -->
     <string name="common_follow_system">跟随系统</string>
+    <string name="common_selected">已选中</string>
 
     <!-- 书库（LIB） -->
     <string name="library_title">书库</string>
@@ -179,4 +180,30 @@
     <string name="time_hours_ago">%1$d 小时前</string>
     <string name="time_yesterday">昨天</string>
     <string name="time_days_ago">%1$d 天前</string>
+
+    <!-- 设置、隐私与许可证（SET-05） -->
+    <string name="library_settings">设置</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_privacy">隐私说明</string>
+    <string name="settings_licenses">开源许可证</string>
+    <string name="settings_crash_log">崩溃日志</string>
+    <string name="settings_crash_log_desc">崩溃日志仅保存在本地，不会上传。开启后，应用意外退出时会记录脱敏后的错误信息（不含正文、摘录和完整文件路径），可供手动分享给开发者。</string>
+    <string name="settings_crash_log_enable">记录崩溃日志</string>
+    <string name="settings_crash_log_share">分享崩溃日志</string>
+    <!-- 隐私说明页 -->
+    <string name="privacy_section_data">数据存储</string>
+    <string name="privacy_data_body">本应用是一款本地优先的离线电子书阅读器。你的书籍文件、阅读进度、书签和高亮笔记全部存储在设备的本地数据库中，不会上传到任何服务器，也不需要注册账号。</string>
+    <string name="privacy_section_network">网络权限</string>
+    <string name="privacy_network_body">本应用不申请 INTERNET 网络权限，核心阅读功能（开书、翻页、搜索、批注、导入）完全在无网络环境下即可完成。书籍中的外部链接会交给系统浏览器打开，应用本身不发起任何网络请求。</string>
+    <string name="privacy_section_crash">崩溃日志</string>
+    <string name="privacy_crash_body">崩溃日志默认关闭。开启后，应用意外退出时会把脱敏后的错误信息写入本地文件——不包含书籍正文、摘录和完整文件路径，不会上传。你可以随时在设置页手动分享崩溃日志给开发者，或关闭此功能。</string>
+    <string name="privacy_section_deps">第三方依赖</string>
+    <string name="privacy_deps_body">本应用使用了 Readium、Jetpack Compose 等开源库。完整的依赖列表与许可证请见「开源许可证」页面。</string>
+    <!-- 许可证页 -->
+    <string name="licenses_note">本应用使用了以下开源库，点击查看完整许可证文本。</string>
+    <string name="licenses_expand">展开许可证</string>
+    <string name="licenses_collapse">收起许可证</string>
+    <string name="licenses_transitive">（传递依赖）</string>
+    <string name="licenses_load_failed">许可证文本加载失败</string>
 </resources>

@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 24 | 2 |
+| P0（MVP 必做） | 28 | 24 | 4 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 24 | 2 |
+| 合计 | 42 | 24 | 4 |
 
-> 当前进度：24 ✅ / 2 🚧（SET-01 i18n + SET-02 无障碍代码完成，待真机回归转 ✅）。详见文末变更记录。
+> 当前进度：24 ✅ / 4 🚧（SET-01 i18n + SET-02 无障碍 + SET-03 系统字号/无障碍 + SET-05 隐私/许可证/崩溃日志 代码完成，待真机回归转 ✅）。详见文末变更记录。
 
 ---
 
@@ -97,9 +97,9 @@
 | --- | --- | --- |
 | SET-01 | 🚧 | 简体中文 + 英文；所有用户可见文案进入资源文件 |
 | SET-02 | 🚧 | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度 |
-| SET-03 | ⬜ | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达 |
+| SET-03 | 🚧 | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达。SET-03 刀：①正文跟随系统字号——`TypographyMappings.toEpubPreferences` 增 `systemFontScale` 参（fontSize × 系统字号倍率），ReaderScreen 据 `LocalDensity.fontScale` 推入 VM（镜像 setSystemDark 范式），WebView 不继承系统 fontScale 故需显式折算；②无障碍审查——SET-02 已覆盖大部分（色点名+RadioButton selected / OptionGroup selected / 边缘翻页按钮+音量键+滑动），补齐 SortMenuItem 选中态 stateDescription。TypographyMappingsTest +3 用例。🚧（代码完成，待真机回归转 ✅） |
 | SET-04 | ✅ | 本地内容默认不上传；无网络权限可完成核心阅读。合刀：`OfflineGuaranteeTest` 4 项固化不变量——源码 Manifest 零网络权限 / 合并后发布 Manifest 不含 INTERNET / catalog 无网络分析库 / 业务源码无直接网络调用（Readium `DefaultHttpClient` 白名单：无 INTERNET 兜底+本地惰性）。实测合并 Manifest 仅有依赖带入的 ACCESS_NETWORK_STATE+WAKE_LOCK（查询/保活，不含 INTERNET） |
-| SET-05 | ⬜ | 隐私说明、开源许可证页、崩溃日志开关；日志不含正文 / 摘录 / 完整路径 |
+| SET-05 | 🚧 | 隐私说明、开源许可证页、崩溃日志开关；日志不含正文 / 摘录 / 完整路径。SET-05 刀：①设置入口（NavHost +3 路由 settings/privacy/licenses + 书库顶栏 Settings 齿轮 IconButton）；②隐私说明页（4 节：数据存储/网络权限/崩溃日志/第三方依赖）；③开源许可证页（手写清单 19 条依赖 + Apache2.0/BSD-3/GPL-CPE 全文 assets，点击展开）；④崩溃日志开关（AppSettingsRepository DataStore 默认关 + CrashLogger Thread.setDefaultUncaughtExceptionHandler 纯本地写 + sanitize 脱敏红线 #8 + EbookApp.onCreate 种 Timber DebugTree/装 handler + 分享按钮 ACTION_SEND）；⑤CrashLogSanitizerTest 8 项固化脱敏。🚧（代码完成，待真机回归转 ✅） |
 
 ---
 
@@ -166,6 +166,14 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-12）：**刀 SET-03 + SET-05 代码完成 ⬜→🚧（待真机回归转 ✅）。**
+> **SET-03 正文随用户字体放大 + 无障碍审查**：① 核心缺口——Reader 正文在 Readium WebView 渲染，WebView 默认 textZoom=100 **不继承系统 fontScale**，视障用户调大系统字号阅读器正文纹丝不动。修复：`TypographyMappings.toEpubPreferences` 增 `systemFontScale: Float` 参，`fontSize = (fontSize ?: 1.0) * systemFontScale`（滑块 × 系统字号，相乘语义）；`ReaderScreen` 据 `LocalDensity.current.fontScale` 经 `LaunchedEffect` 推入 `ReaderViewModel.setSystemFontScale`（镜像既有 `setSystemDark` 范式）；VM `preferences` 改三路 `combine(typography, _systemDark, _systemFontScale)`。configChanges 不含 fontScale → 改系统字号 Activity 重建 → LaunchedEffect 重读（与暗色同理，READ-01 负责恢复 locator）。② 无障碍审查——SET-02 已覆盖大部分（色点 48dp+色名+RadioButton selected / OptionGroup RadioButton selected / 翻页边缘按钮 contentDescription+音量键+滑动三路径）；补齐 `SortMenuItem` 选中态 `stateDescription`（不只靠「✓」视觉前缀）。`TypographyMappingsTest` +3 用例（默认不变 / null 跟随系统 / 滑块相乘，delta=1e-5 容 Float 精度）。
+> **SET-05 隐私说明 + 开源许可证 + 崩溃日志开关**：① **设置入口**（当前零设置页）——NavHost +3 路由（settings/privacy/licenses）+ 书库顶栏 `Icons.Default.Settings` IconButton 导航。② **隐私说明页** PrivacyScreen——4 节（数据存储全本地 / 无 INTERNET 权限 / 崩溃日志默认关+脱敏+可分享 / 第三方依赖见许可证页）。③ **开源许可证页** LicensesScreen——**手写清单**（不用 play-services-oss-licenses，避免引入网络依赖踩 SET-04 红线）：`LicenseData` 19 条依赖含传递依赖（Readium 3.3.0 BSD-3-Clause / Compose/AndroidX/Coil/Hilt/Room/Timber Apache 2.0 / desugar_jdk_libs GPL+CPE / koi+AndroidPdfViewer 传递依赖），全文本存 `assets/legal/{apache-2.0,bsd-3-clause,gpl-cpe}.txt`（OSI 标准全文），LazyColumn 点击展开内联全文（asset 缓存）。④ **崩溃日志开关 + 脱敏（红线 #8）**——`AppSettingsRepository`（DataStore `booleanPreferencesKey("app_crash_log_enabled")` 默认 false 复用同一全局 DataStore）+ `SettingsViewModel`（@HiltViewModel）；`CrashLogger`（`Thread.setDefaultUncaughtExceptionHandler` 纯本地写 `filesDir/crash_logs/`，保留最近 5 条，链式调原 handler 不吞系统对话框）+ `sanitize()` 脱敏函数（filesDir/cacheDir 前缀 → `<app-dir>`/`<app-cache>` / `/data/data|user/` + `/storage/` 兜底 / `*.epub|txt|pdf|cbz` → `<file>`，源码行号保留）；`EbookApp.onCreate` override（@Inject appSettings + @Volatile crashLogEnabled 缓存 + debug 种 `Timber.DebugTree` + 装 crash handler）；SettingsScreen 崩溃日志行 `Row.toggleable(role=Switch)` + 有记录时「分享崩溃日志」TextButton（ACTION_SEND EXTRA_TEXT，无网络纯本地，不经 FileProvider）。⑤ **新增 `common_selected` 资源**（SortMenuItem stateDescription）。
+> **测试**：`CrashLogSanitizerTest` 8 项（filesDir/cacheDir/epub/txt+pdf/通用data/storage 兜底/源码行号保留/模拟完整崩溃日志——红线 #8 固化为防回退测试）；`TypographyMappingsTest` +3 SET-03 用例；`StringResourceKeysTest` 4 项 zh/en key parity 通过；`OfflineGuaranteeTest` 4 项全过（确认新增 CrashLogger/EbookApp 代码零网络 token/零 INTERNET 依赖/零网络库）。`:app:assembleDebug` + `:app:testDebugUnitTest`（149 passed）+ `:app:lintDebug` **BUILD SUCCESSFUL**。
+> **仅单测 + 编译 + lint，未真机回归**——待真机验「① 系统字号调大→阅读器正文同步放大 ② 书库齿轮→设置→三页（隐私/许可证展开/崩溃日志开关） ③ 开关开→制造崩溃→重启→设置页分享按钮出现→分享脱敏日志 ④ TalkBack 排序菜单读已选中」兜底后转 ✅。
+
+> 实现状态（2026-08-12）：**SET-03 + SET-05 真机回归（vivo V2329A），核心功能验证通过。** ① **SET-03 系统字号放大**——真机 `adb shell settings put system font_scale 1.5` → 阅读器 Activity 重建 → 正文同步放大，PIL 像素分析确认 scale 1.5 时文字像素覆盖是 1.0 的 **2.54x**（CJK 字符面积按字号平方增长，符合预期），恢复 1.0 正常。② **SET-05 设置三页**——书库齿轮→设置页 3 行可见（隐私说明/开源许可证/崩溃日志开关 + 脱敏说明文字）；隐私说明页 4 节齐全（数据存储/网络权限/崩溃日志/第三方依赖）；许可证页 19 条列表 + 点击展开不崩；崩溃日志开关 toggle on→force-stop 重启→开关保位（DataStore 持久化）+ `run-as` 写模拟崩溃日志后设置页出现「分享崩溃日志」按钮。③ **修复 LicensesScreen 崩溃**——许可证全文 `Text` 在 LazyColumn item 内用 `verticalScroll` 触发 `IllegalStateException: Vertically scrollable component was measured with an infinity maximum height constraints`（LazyColumn item maxHeight=Infinity，嵌套 verticalScroll 禁止）；修复改 `.heightIn(max = 360.dp).verticalScroll()`（先限定高度再 scroll）。④ **OfflineGuaranteeTest 仍 4/4 全过**（LicensesScreen 修复无新增网络依赖）。⑤ **待徐先生手指**：TalkBack 开启后验排序菜单播报「已选中」+ TalkBack 设置/隐私/许可证三页可完成导航 + 实际 Java 崩溃→脱敏日志写入流程（adb 无法触发 Java 级 UncaughtException，SIGKILL/SIGSEGV 不走 Java handler）。SET-03/05 维持 🚧，TalkBack 验过后转 ✅。
 
 > 实现状态（2026-08-12）：**刀2 SET-02 无障碍代码完成 ⬜→🚧（在刀1 i18n 字符串资源基础上补语义）。** 对齐 design.md §4.6 P0「TalkBack / 语义标签 / 焦点顺序 / 48dp 最小触控目标 / 高对比度」+ REL-06「TalkBack 能完成 导入→阅读→加书签→回书库」。
 > **触控目标（48dp，最严重项）**：批注面板**高亮四色圆点**原 12/16dp（远低于 48dp）、无标签、仅靠颜色区分（违反「不只靠颜色」）→ 外层 36dp 可点热区（一行 4 色 ×36dp 放得下，视觉圆点保留小尺寸）+ `contentDescription`（色名 黄/绿/蓝/粉，复用导出色名资源）+ `Role.RadioButton` + `selected` 语义，TalkBack 读「黄，单选按钮，已选中」。所有 IconButton / TextButton / Tab 本就用 M3 默认（≥48dp），无需改。
