@@ -82,14 +82,14 @@
 | TYPE-01 | ✅ | 字号、字体、字重、行高、段距、页边距、对齐（实时预览 + 保位）。刀2-A：全维度接 DataStore 持久化 + 排版面板；真机回归字号 130% 杀重启保位 + slider 跟手通过。字重 UI 推后（数据层+映射就绪，留 TYPE-05 一并） |
 | TYPE-02 | ✅ | 日间、米黄、夜间主题与跟随系统（夜间无白屏闪烁）。刀2-A：真机回归夜间实时+杀重启保位 + 跟随系统（系统暗色切换正文跟随）+ 夜间无白屏闪烁均通过 |
 | TYPE-03 | ✅ | 屏幕亮度、常亮、方向设置。刀 TYPE-03/IMP-02/05：独立 ReaderDisplaySettings（:core:model，与排版分离）+ ReaderDisplaySettingsRepository（复用同一 DataStore）+ ReaderViewModel displaySettings StateFlow + 3 setter → ReaderScreen LaunchedEffect/DisposableEffect apply 到 Window（亮度 screenBrightness / 常亮 FLAG_KEEP_SCREEN_ON / 方向 requestedOrientation）+ 退出 DisposableEffect 恢复系统 + TypographySheet「显示」区（亮度 Slider + 常亮 Switch + 方向 OptionGroup）；Manifest 加 configChanges 抑制方向锁重建。真机（vivo V2329A）全过：亮度 Slider 实时变化 + 常亮开关阅读不灭屏 + 方向锁竖屏（系统横屏下保持 ROTATION_0 + PID 不变不重建）+ 退出恢复跟随系统（ROTATION_90）+ 杀重启三项保位（亮度 50% + 竖屏锁定跨重启保留） |
-| TYPE-04 | ⬜ | 正确显示中文、日文、RTL、竖排、ruby 注音（建回归样本集） |
+| TYPE-04 | ✅ | 正确显示中文、日文、RTL、竖排、ruby 注音（建回归样本集）。合刀：建 `samples/public/typography/`（ruby/rtl/vertical 三 EPUB，Python 生成器 `scripts/gen_typography_fixtures.py`）+ JVM 结构校验 `TypographySamplesTest`（4）+ 仪器开书冒烟 `TypographySamplesOpenTest`（连机跑）+ README 真机肉眼清单。结论：EPUB ruby/RTL/竖排透传 ReadiumCSS 渲染、应用无需改；TXT 无 ruby。**真机视觉回归全过**（vivo：ruby 注音在汉字上方 / rtl 从右向左 / vertical 竖排列从右向左，均无乱码，adb 截图+视觉分析核对） |
 
 ### 数据、导出与统计（DATA）
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
 | DATA-01 | ✅ | 导出单本书书签 / 高亮 / 笔记为 Markdown / JSON（含 schema 版本 + Locator + 时间戳）。刀 DATA-01：ExportBookDataUseCase（4 DAO 聚合 + kotlinx @Serializable DTO + MD/JSON 双序列化 + SAF CreateDocument 临时文件原子写）；入口在笔记 sheet 标题行「导出」→ 格式弹窗 → SAF；schemaVersion=1（独立于 PersistedLocator 内层）。**真机回归（vivo V2329A）全过**：MD/JSON 各导出 pull 验内容——MD 含书名/进度/书签/高亮/笔记/时间戳人可读；JSON schemaVersion=1 + book.id + 嵌套 locator(含内层 schemaVersion) + 全时间戳 |
-| DATA-02 | ⬜ | 本地数据库自动迁移（升级不丢书库 / 进度 / 批注，有迁移测试） |
+| DATA-02 | ✅ | 本地数据库自动迁移（升级不丢书库 / 进度 / 批注，有迁移测试）。合刀：新增仪器级 `MigrationTestHelper` 测试 `BookDatabaseMigrationInstrumentedTest`（由 1.json 建 v1 库 → `runMigrationsAndValidate` 与 2.json 逐字段校验 → 断言保数据/建新表/CASCADE），与既有 Robolectric `BookDatabaseMigrationTest` 形成 CI+设备双覆盖。**真机 connectedDebugAndroidTest 全过**（vivo V2329A；初跑败在 MigrationTestHelper 连接 FK pragma 默认 OFF → 删书前加 `PRAGMA foreign_keys=ON` 修复） |
 
 ### 设置、无障碍与隐私（SET）
 
@@ -98,7 +98,7 @@
 | SET-01 | ⬜ | 简体中文 + 英文；所有用户可见文案进入资源文件 |
 | SET-02 | ⬜ | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度 |
 | SET-03 | ⬜ | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达 |
-| SET-04 | ⬜ | 本地内容默认不上传；无网络权限可完成核心阅读 |
+| SET-04 | ✅ | 本地内容默认不上传；无网络权限可完成核心阅读。合刀：`OfflineGuaranteeTest` 4 项固化不变量——源码 Manifest 零网络权限 / 合并后发布 Manifest 不含 INTERNET / catalog 无网络分析库 / 业务源码无直接网络调用（Readium `DefaultHttpClient` 白名单：无 INTERNET 兜底+本地惰性）。实测合并 Manifest 仅有依赖带入的 ACCESS_NETWORK_STATE+WAKE_LOCK（查询/保活，不含 INTERNET） |
 | SET-05 | ⬜ | 隐私说明、开源许可证页、崩溃日志开关；日志不含正文 / 摘录 / 完整路径 |
 
 ---
@@ -166,6 +166,13 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-12）：**合刀 TYPE-04 + DATA-02 + SET-04 完成（MVP 质量地基），三需求 ⬜→✅。**
+> **TYPE-04 排版回归样本集**：① **样本**——`scripts/gen_typography_fixtures.py`（纯 stdlib，结构对齐自有 `TxtEpubConverter`）生成 `samples/public/typography/{ruby,rtl,vertical}.epub`（ruby=`<ruby><rt>` 拼音 / rtl=`dir=rtl`+`page-progression-direction=rtl` 阿拉伯文 / vertical=`writing-mode:vertical-rl` 静夜思），CJK 横排复用 `chinese-shanhaijing.epub`；README 含来源/许可证 + 真机肉眼回归清单。② **JVM 结构校验** `TypographySamplesTest`（`:reader:readium`，4 项）解压断言特征标记存在 + 合法 EPUB（mimetype 首项 STORED）。③ **仪器开书冒烟** `TypographySamplesOpenTest`（`:app` androidTest，3 项）经生产 `ReadiumFacade`+`OpenBookUseCase` 打开断言语言/RTL（连机跑）。④ **结论**：EPUB ruby/RTL/竖排透传 ReadiumCSS WebView 渲染，**应用零自定义 CSS、无需新增处理代码**；TXT 路径只产 `<p>` 无内联标记故无 ruby。
+> **DATA-02 迁移测试框架**：新增仪器级 `BookDatabaseMigrationInstrumentedTest`（`:app` androidTest）——`MigrationTestHelper.createDatabase(1)`（由 1.json 建真实 v1 库，取代手写 SQL）→ 种子 1 书+1 进度 → `runMigrationsAndValidate(2, MIGRATION_1_2)`（与 2.json 逐字段比对 schema）→ 断言 books/progress 数据不丢 + bookmarks/annotations 已建空 + 新插可写 + 删书 FK CASCADE。与既有 Robolectric `BookDatabaseMigrationTest`（CI 无设备挡数据回归）形成 **CI+设备双覆盖**。附扩展指南（加 v2→v3 = 加一行 `runMigrationsAndValidate`）。REL-03「升级迁移」一腿由此自动化兜底，整体仍 ⬜（强杀/重启属发布门槛）。
+> **SET-04 离线/无网络验证**：`OfflineGuaranteeTest`（`:app`，4 项）把「无网络」固化成防回退测试——① 源码 Manifest 零网络权限；② **合并后发布 Manifest 不含 INTERNET**（红线 #8 充要条件，扫 AGP 合并产物，排除 UnitTest 变体）；③ `libs.versions.toml` 无 okhttp/retrofit/firebase/… 等网络分析库；④ 业务源码无直接网络调用（库前缀 + 平台原语扫描，Readium `DefaultHttpClient` 白名单：无 INTERNET 兜底 + 本地惰性）。**实测发现**合并 Manifest 仅有依赖带入的 `ACCESS_NETWORK_STATE`+`WAKE_LOCK`（查询/保活类，**不含 INTERNET**，套接字打不开），故核心阅读完全离线。
+> **测试证据**：`:reader:readium` +4（`TypographySamplesTest` 4/4）+ `:app` +4（`OfflineGuaranteeTest` 4/4）单测全绿（0 fail/0 error/0 skip）；`assembleDebug` + `testDebugUnitTest`（全模块）**BUILD SUCCESSFUL**；`:app:assembleDebugAndroidTest` **BUILD SUCCESSFUL**（仪器测试 MigrationTestHelper + 开书冒烟**仅编译通过、未执行**）。
+> **真机回归全过（vivo V2329A，2026-08-12）**：① connectedDebugAndroidTest **4/4 全过**（DATA-02 迁移保数据+schema 一致+CASCADE；TYPE-04 开书冒烟 ruby/vertical 中文、rtl→RTL）；迁移测试初跑败在 MigrationTestHelper 连接外键 pragma 默认 OFF（删书不级联），加 `PRAGMA foreign_keys=ON` 后转绿。② TYPE-04 **视觉回归全过**——徐先生导入三样本，adb screencap + 视觉分析核对：ruby **拼音注音在汉字正上方**（hàn/zhù/yuè/zhōng/wén）、rtl **阿拉伯文从右向左**、vertical **竖排列自右向左**（《静夜思》无乱码）。③ adb 限制备忘：app 原装在 vivo XSpace（user 666），adb shell(user 0) 无法 run-as/am start（报 user 666 无权限 / Error type 3）；已 `./gradlew :app:installDebug` 装一份到机主(user 0) 才能控制。vivo 的 run-as 是假沙盒（pwd 假、实际在根目录）；file:// 导入被 Scoped Storage 拒——故「导入 epub」仍需徐先生手指（SAF 授权）。
 
 > 实现状态（2026-08-12）：**真机回归（vivo V2329A）全过：TYPE-03 + IMP-02 + IMP-05 🚧→✅。P0 21 ✅ / 0 🚧。** adb 自动化（intent 导入 / 方向锁 dumpsys 验证 / 杀重启保位）+ 徐先生手指（亮度 Slider 实时变 + 常亮开关不灭屏）混合验证。
 > **TYPE-03 真机**：① **排版面板「显示」区**——TypographySheet 滚到底可见「显示」标题 + 亮度 Slider（值「跟随系统」默认）+ 保持常亮 Switch + 方向 OptionGroup（跟随系统/竖屏/横屏三选项齐全）；② **亮度 Slider**（徐先生手指拖动）→ 屏幕亮度实时变暗/变亮；③ **保持常亮**（徐先生手指开关）→ 阅读时屏幕不灭；④ **方向锁竖屏**——点「竖屏」后设系统横屏（`user_rotation=1`）→ app 保持 **ROTATION_0（1080×2400 竖屏）** + **PID 不变**（configChanges 抑制 Activity 重建，Readium navigator 不被拆）；⑤ **退出恢复**——退出 reader 后系统横屏 → app **ROTATION_90（2400×1080）**（requestedOrientation 恢复 UNSPECIFIED，书库页跟随系统）；⑥ **杀重启保位**——force-stop 重开进 reader，亮度 **50%** 保留 + 方向竖屏锁定保留（DataStore 持久化跨重启），设系统横屏仍保持 ROTATION_0。

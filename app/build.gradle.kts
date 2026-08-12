@@ -66,6 +66,8 @@ android {
     // Room schema JSON 读取：androidTest（migration 仪器测试 assets）+ test（SchemaExportedTest resources）。
     sourceSets {
         getByName("androidTest").assets.srcDir("$projectDir/schemas")
+        // TYPE-04：排版样本（ruby/rtl/vertical）打入 androidTest assets，供 TypographySamplesOpenTest 开书冒烟读取。
+        getByName("androidTest").assets.srcDir("${rootProject.projectDir}/samples/public/typography")
         getByName("test").resources.srcDir("$projectDir/schemas")
     }
 
