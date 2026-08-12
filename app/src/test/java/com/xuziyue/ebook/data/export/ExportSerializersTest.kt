@@ -1,5 +1,8 @@
 package com.xuziyue.ebook.data.export
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.xuziyue.ebook.R
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -8,12 +11,21 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /**
  * 导出序列化单测（DATA-01）。
  * 验证 JSON 含稳定 schema 版本 + 书籍 ID + Locator（嵌套 schemaVersion）+ 时间戳；Markdown 人可读。
+ *
+ * SET-01：[ExportDto.toMarkdown] 标签经字符串资源本地化，需 [Context] 解析；
+ * Markdown 标签断言用 `context.getString(R.string.xxx)`（与被测同源解析，locale 无关），
+ * 数据子串（书名 / 摘录）仍是测试固有的字面值。
  */
+@RunWith(RobolectricTestRunner::class)
 class ExportSerializersTest {
+
+    private val context = ApplicationProvider.getApplicationContext<Context>()
 
     private val sampleLocator = Json.parseToJsonElement(
         """{"schemaVersion":1,"locatorJson":"{\"href\":\"ch1\",\"type\":\"text/html\"}"}""",
@@ -61,11 +73,12 @@ class ExportSerializersTest {
 
     @Test
     fun `toMarkdown 含书名标题与高亮笔记`() {
-        val md = sampleDto().toMarkdown()
-        assertTrue(md.contains("# 《测试书》批注"))
+        val md = sampleDto().toMarkdown(context)
+        // 标签经资源解析（与被测同源，locale 无关）；数据子串（作者 / 高亮 / 摘录）固有。
+        assertTrue(md.contains(context.getString(R.string.export_md_title, "测试书")))
         assertTrue(md.contains("作者甲"))
         assertTrue(md.contains("高亮文字"))
-        assertTrue(md.contains("笔记：好句"))
+        assertTrue(md.contains(context.getString(R.string.note_label, "好句")))
         assertTrue(md.contains("书签摘录"))
     }
 }

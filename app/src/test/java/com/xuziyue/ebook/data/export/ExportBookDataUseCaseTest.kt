@@ -1,8 +1,10 @@
 package com.xuziyue.ebook.data.export
 
+import android.content.Context
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.db.AnnotationEntity
 import com.xuziyue.ebook.data.db.BookDatabase
 import com.xuziyue.ebook.data.db.BookEntity
@@ -10,6 +12,7 @@ import com.xuziyue.ebook.data.db.BookmarkEntity
 import com.xuziyue.ebook.data.db.ReadingProgressEntity
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReadingStatus
+import com.xuziyue.ebook.ui.UserMessage
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -28,18 +31,19 @@ class ExportBookDataUseCaseTest {
 
     private lateinit var db: BookDatabase
     private lateinit var useCase: ExportBookDataUseCase
+    private lateinit var context: Context
 
     @Before
     fun setUp() {
-        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        db = Room.inMemoryDatabaseBuilder(ctx, BookDatabase::class.java)
+        context = ApplicationProvider.getApplicationContext()
+        db = Room.inMemoryDatabaseBuilder(context, BookDatabase::class.java)
             .allowMainThreadQueries().build()
         useCase = ExportBookDataUseCase(
             bookDao = db.bookDao(),
             annotationDao = db.annotationDao(),
             bookmarkDao = db.bookmarkDao(),
             progressDao = db.readingProgressDao(),
-            context = ctx,
+            context = context,
         )
     }
 
@@ -65,7 +69,10 @@ class ExportBookDataUseCaseTest {
     fun `书不存在返回 Failed`() = runTest {
         val tmp = FileTemp()
         val r = useCase.export("nope", ExportBookDataUseCase.Format.JSON, tmp.uri)
-        assertEquals("书籍不存在", (r as ExportBookDataUseCase.Outcome.Failed).message)
+        assertEquals(
+            R.string.error_book_not_found,
+            ((r as ExportBookDataUseCase.Outcome.Failed).message as UserMessage.Res).resId,
+        )
     }
 
     @Test
@@ -74,7 +81,10 @@ class ExportBookDataUseCaseTest {
         val tmp = FileTemp()
         val r = useCase.export("b1", ExportBookDataUseCase.Format.JSON, tmp.uri)
         assertTrue(r is ExportBookDataUseCase.Outcome.Failed)
-        assertTrue((r as ExportBookDataUseCase.Outcome.Failed).message.contains("没有"))
+        assertEquals(
+            R.string.error_export_empty,
+            ((r as ExportBookDataUseCase.Outcome.Failed).message as UserMessage.Res).resId,
+        )
     }
 
     @Test
@@ -109,7 +119,7 @@ class ExportBookDataUseCaseTest {
         val r = useCase.export("b1", ExportBookDataUseCase.Format.MARKDOWN, tmp.uri)
         assertTrue(r is ExportBookDataUseCase.Outcome.Success)
         val content = tmp.file.readText()
-        assertTrue(content.contains("# 《书b1》批注"))
+        assertTrue(content.contains(context.getString(R.string.export_md_title, "书b1")))
         assertTrue(content.contains("书签摘录"))
     }
 

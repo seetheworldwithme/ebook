@@ -35,6 +35,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // SET-01：只保留简中 / 英文资源，裁剪依赖库带入的其它语言（缩小 APK）。
+        resourceConfigurations += listOf("zh", "en")
     }
 
     buildTypes {

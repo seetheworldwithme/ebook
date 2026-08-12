@@ -49,6 +49,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -59,6 +63,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.data.bookIdOrNull
 import com.xuziyue.ebook.library.LibraryFilter
@@ -70,6 +75,7 @@ import com.xuziyue.ebook.library.BookDetailScreen
 import com.xuziyue.ebook.reader.ReaderScreen
 import com.xuziyue.ebook.ui.BookCover
 import com.xuziyue.ebook.ui.relativeTime
+import com.xuziyue.ebook.ui.resolve
 import com.xuziyue.ebook.ui.theme.EbookReaderTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -204,6 +210,11 @@ private fun LibraryScreen(
     val items by viewModel.items.collectAsStateWithLifecycle(initialValue = emptyList())
     val importing by viewModel.importing.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 静态导入结果文案在 Composable 作用域解析（lint 要求 stringResource 而非 context.getString，
+    // 这样随系统语言变化自动重组；Failed 的动态消息走 UserMessage.resolve(context)）。
+    val importSuccessText = stringResource(R.string.import_success)
+    val importAlreadyExistsText = stringResource(R.string.import_already_exists)
+    val importProgressText = stringResource(R.string.reader_importing)
 
     // IMP-02：外部 Intent 导入（ACTION_VIEW/SEND），与 SAF 导入共用 importEvents 反馈通道。
     LaunchedEffect(Unit) {
@@ -219,9 +230,9 @@ private fun LibraryScreen(
     LaunchedEffect(Unit) {
         viewModel.importEvents.collect { outcome ->
             val msg = when (outcome) {
-                is ImportBookUseCase.Outcome.Imported -> "导入成功"
-                is ImportBookUseCase.Outcome.AlreadyExists -> "已在书库中"
-                is ImportBookUseCase.Outcome.Failed -> outcome.message
+                is ImportBookUseCase.Outcome.Imported -> importSuccessText
+                is ImportBookUseCase.Outcome.AlreadyExists -> importAlreadyExistsText
+                is ImportBookUseCase.Outcome.Failed -> outcome.message.resolve(context)
             }
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             // 成功（Imported / AlreadyExists）→ 跳阅读器（用户意图是看书）。
@@ -246,31 +257,35 @@ private fun LibraryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("书库", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    stringResource(R.string.library_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.semantics { heading() },
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box {
-                        TextButton(onClick = { showSortMenu = true }) { Text("排序") }
+                        TextButton(onClick = { showSortMenu = true }) { Text(stringResource(R.string.library_sort)) }
                         DropdownMenu(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false },
                         ) {
-                            SortMenuItem("最近阅读", sort, LibrarySort.LAST_OPENED) {
+                            SortMenuItem(stringResource(R.string.library_sort_recent), sort, LibrarySort.LAST_OPENED) {
                                 viewModel.setSort(it); showSortMenu = false
                             }
-                            SortMenuItem("导入时间", sort, LibrarySort.IMPORTED) {
+                            SortMenuItem(stringResource(R.string.library_sort_imported), sort, LibrarySort.IMPORTED) {
                                 viewModel.setSort(it); showSortMenu = false
                             }
-                            SortMenuItem("书名", sort, LibrarySort.TITLE) {
+                            SortMenuItem(stringResource(R.string.library_sort_title), sort, LibrarySort.TITLE) {
                                 viewModel.setSort(it); showSortMenu = false
                             }
                         }
                     }
                     TextButton(onClick = { viewModel.toggleViewMode() }) {
-                        Text(if (viewMode == LibraryViewMode.LIST) "网格" else "列表")
+                        Text(if (viewMode == LibraryViewMode.LIST) stringResource(R.string.library_view_grid) else stringResource(R.string.library_view_list))
                     }
                     OutlinedButton(onClick = {
                         launcher.launch(arrayOf("application/epub+zip", "text/plain", "*/*"))
-                    }) { Text("导入") }
+                    }) { Text(stringResource(R.string.library_import)) }
                 }
             }
 
@@ -278,37 +293,37 @@ private fun LibraryScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::setQuery,
-                placeholder = { Text("搜索书名或作者") },
+                placeholder = { Text(stringResource(R.string.library_search_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
 
             // IMP-05：导入进行中 indeterminate 进度条。
             if (importing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().semantics { contentDescription = importProgressText })
             }
 
             OutlinedButton(
                 onClick = { viewModel.importAsset(ALICE_ASSET) },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-            ) { Text("读内置样本 Alice（EPUB2）") }
+            ) { Text(stringResource(R.string.library_sample_alice)) }
 
             // 三入口（LIB-02）：最近阅读 / 全部 / 已读完
             PrimaryTabRow(selectedTabIndex = filter.ordinal) {
                 Tab(
                     selected = filter == LibraryFilter.RECENT,
                     onClick = { viewModel.setFilter(LibraryFilter.RECENT) },
-                    text = { Text("最近阅读") },
+                    text = { Text(stringResource(R.string.library_tab_recent)) },
                 )
                 Tab(
                     selected = filter == LibraryFilter.ALL,
                     onClick = { viewModel.setFilter(LibraryFilter.ALL) },
-                    text = { Text("全部") },
+                    text = { Text(stringResource(R.string.library_tab_all)) },
                 )
                 Tab(
                     selected = filter == LibraryFilter.FINISHED,
                     onClick = { viewModel.setFilter(LibraryFilter.FINISHED) },
-                    text = { Text("已读完") },
+                    text = { Text(stringResource(R.string.library_tab_finished)) },
                 )
             }
 
@@ -319,10 +334,10 @@ private fun LibraryScreen(
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         // 空态文案按筛选维度区分（LIB-02：已读完/最近阅读空 ≠ 没书）
                         val emptyText = when {
-                            query.isNotBlank() -> "没找到匹配「$query」的书"
-                            filter == LibraryFilter.FINISHED -> "还没有读完的书"
-                            filter == LibraryFilter.RECENT -> "还没有最近阅读的书"
-                            else -> "还没有书，导入一本开始吧"
+                            query.isNotBlank() -> stringResource(R.string.library_empty_search, query)
+                            filter == LibraryFilter.FINISHED -> stringResource(R.string.library_empty_finished)
+                            filter == LibraryFilter.RECENT -> stringResource(R.string.library_empty_recent)
+                            else -> stringResource(R.string.library_empty_all)
                         }
                         Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -370,6 +385,7 @@ private fun SortMenuItem(
 /** 书库列表（默认，LIB-01）：横向卡——封面缩略 + 书名 + 作者 + 进度条 + 最近阅读时间。 */
 @Composable
 private fun LibraryListRow(item: LibraryItem, onClick: () -> Unit) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -414,7 +430,7 @@ private fun LibraryListRow(item: LibraryItem, onClick: () -> Unit) {
                     )
                 } else {
                     Text(
-                        "未读",
+                        stringResource(R.string.library_unread),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -422,7 +438,7 @@ private fun LibraryListRow(item: LibraryItem, onClick: () -> Unit) {
             }
             item.book.lastOpenedAt?.let {
                 Text(
-                    relativeTime(it, System.currentTimeMillis()),
+                    relativeTime(it, System.currentTimeMillis()).resolve(context),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp),
@@ -462,7 +478,7 @@ private fun LibraryGridCard(item: LibraryItem, onClick: () -> Unit) {
             )
         }
         Text(
-            if (item.progression != null) "${(item.progression!! * 100).toInt()}%" else "未读",
+            if (item.progression != null) "${(item.progression!! * 100).toInt()}%" else stringResource(R.string.library_unread),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

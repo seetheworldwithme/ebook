@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
@@ -90,6 +98,7 @@ import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderDisplaySettings
@@ -99,6 +108,7 @@ import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
 import com.xuziyue.ebook.ui.relativeTime
+import com.xuziyue.ebook.ui.resolve
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import org.readium.r2.shared.publication.Link
@@ -196,12 +206,19 @@ fun ReaderScreen(
     val jsonLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),
     ) { uri -> uri?.let { viewModel.exportBook(ExportBookDataUseCase.Format.JSON, it) } }
+    // 导出成功文案模板在 Composable 作用域解析（lint 要求 stringResource 而非 context.getString），
+    // 具体数值（条数 / 格式名）在 collect 里 String.format 填充。
+    val exportSuccessTemplate = stringResource(R.string.reader_export_success)
     LaunchedEffect(Unit) {
         viewModel.exportEvents.collect { outcome ->
             val msg = when (outcome) {
                 is ExportBookDataUseCase.Outcome.Success ->
-                    "已导出 ${outcome.items} 条（${if (outcome.format == ExportBookDataUseCase.Format.JSON) "JSON" else "Markdown"}）"
-                is ExportBookDataUseCase.Outcome.Failed -> outcome.message
+                    String.format(
+                        exportSuccessTemplate,
+                        outcome.items,
+                        if (outcome.format == ExportBookDataUseCase.Format.JSON) "JSON" else "Markdown",
+                    )
+                is ExportBookDataUseCase.Outcome.Failed -> outcome.message.resolve(context)
             }
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
@@ -225,20 +242,32 @@ fun ReaderScreen(
 
         // READ-03：点击左右边缘翻页（仅分页模式；scroll 模式是上下滚动，点击无意义）。
         // 左右各 20% 宽，中间 60% 留给 WebView 文本选择 / 链接。顶栏 / 底栏在更高 z 层覆盖上下区。
+        // SET-02：给不可见点击区加 contentDescription + Role.Button——既消除 TalkBack「无名可点」，
+        // 又给 TalkBack 用户一个显式翻页入口（音量键 / 滑动对 TalkBack 不友好）。
+        val pagePrevText = stringResource(R.string.reader_page_prev)
+        val pageNextText = stringResource(R.string.reader_page_next)
         if (typography.scroll != ReaderScrollMode.SCROLL) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(0.2f)
                     .align(Alignment.TopStart)
-                    .clickable { viewModel.goBackwardPaging() },
+                    .clickable { viewModel.goBackwardPaging() }
+                    .semantics {
+                        contentDescription = pagePrevText
+                        role = Role.Button
+                    },
             )
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(0.2f)
                     .align(Alignment.TopEnd)
-                    .clickable { viewModel.goForwardPaging() },
+                    .clickable { viewModel.goForwardPaging() }
+                    .semantics {
+                        contentDescription = pageNextText
+                        role = Role.Button
+                    },
             )
         }
 
@@ -352,8 +381,8 @@ fun ReaderScreen(
         if (showExportFormat) {
             AlertDialog(
                 onDismissRequest = { showExportFormat = false },
-                title = { Text("导出批注") },
-                text = { Text("选择导出格式") },
+                title = { Text(stringResource(R.string.reader_export_title)) },
+                text = { Text(stringResource(R.string.reader_export_choose)) },
                 confirmButton = {
                     TextButton(onClick = {
                         showExportFormat = false
@@ -387,12 +416,13 @@ fun ReaderScreen(
         }
 
         // Loading 遮罩（打开 Publication 中 / 进程重建重 open 中）
+        val loadingText = stringResource(R.string.reader_loading)
         if (uiState is ReaderUiState.Loading) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(modifier = Modifier.semantics { contentDescription = loadingText })
             }
         }
 
@@ -403,9 +433,9 @@ fun ReaderScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(err.message, color = MaterialTheme.colorScheme.error)
+                    Text(err.message.resolve(context), color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(16.dp))
-                    OutlinedButton(onClick = onBack) { Text("返回") }
+                    OutlinedButton(onClick = onBack) { Text(stringResource(R.string.reader_back)) }
                 }
             }
         }
@@ -440,21 +470,21 @@ private fun ReaderTopBar(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回书库")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.reader_back_to_library))
                 }
                 IconButton(onClick = onOpenToc) {
-                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录")
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.reader_toc))
                 }
                 // READ-05：书内搜索入口（canSearch gating，红线 #2；PDF 未验证则隐藏）。
                 if (canSearch) {
                     IconButton(onClick = onOpenSearch) {
-                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                        Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.reader_search))
                     }
                 }
                 // READ-02：目录/进度跳转后可返回上一阅读位置（无历史时隐藏）。
                 if (canGoBack) {
                     IconButton(onClick = onGoBack) {
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "返回上一阅读位置")
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.reader_go_back))
                     }
                 }
             }
@@ -463,12 +493,12 @@ private fun ReaderTopBar(
                 IconButton(onClick = onToggleBookmark, enabled = canBookmark) {
                     Icon(
                         if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                        contentDescription = if (isBookmarked) "取消书签" else "加书签",
+                        contentDescription = stringResource(if (isBookmarked) R.string.reader_remove_bookmark else R.string.reader_add_bookmark),
                         tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 TextButton(onClick = onOpenProgress) {
-                    Text("进度 $progressText", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.reader_progress, progressText), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }
@@ -499,24 +529,24 @@ private fun ReaderBottomBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onFontDecrease) {
-                Icon(Icons.Default.TextDecrease, contentDescription = "字号减小")
+                Icon(Icons.Default.TextDecrease, contentDescription = stringResource(R.string.reader_font_decrease))
             }
             IconButton(onClick = onFontIncrease) {
-                Icon(Icons.Default.TextIncrease, contentDescription = "字号增大")
+                Icon(Icons.Default.TextIncrease, contentDescription = stringResource(R.string.reader_font_increase))
             }
             IconButton(onClick = onOpenTypography) {
-                Icon(Icons.Default.Tune, contentDescription = "排版")
+                Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.reader_typography))
             }
             // READ-06：书签列表入口（canBookmark gating 红线 #2）。
             if (canBookmark) {
                 TextButton(onClick = onOpenBookmarks) {
-                    Text("书签 $bookmarkCount", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.reader_bookmarks_count, bookmarkCount), style = MaterialTheme.typography.bodySmall)
                 }
             }
             // READ-07：高亮 / 笔记列表入口（canHighlight gating 红线 #2；PDF V1 生效时隐藏）。
             if (canHighlight) {
                 TextButton(onClick = onOpenAnnotations) {
-                    Text("笔记 $annotationCount", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.reader_annotations_count, annotationCount), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -538,13 +568,16 @@ private fun TocSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Text(
-            "目录",
+            stringResource(R.string.reader_toc),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp)
+                .semantics { heading() },
         )
         if (items.isEmpty()) {
             Text(
-                "本书没有目录",
+                stringResource(R.string.reader_toc_empty),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
             )
@@ -556,7 +589,7 @@ private fun TocSheet(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onJump(toc.link) }
+                            .clickable(role = Role.Button) { onJump(toc.link) }
                             .padding(start = (24 + toc.depth * 16).dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
                     )
                 }
@@ -581,7 +614,8 @@ private fun ProgressSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
-            Text("跳转进度", style = MaterialTheme.typography.titleMedium)
+            val jumpTitle = stringResource(R.string.reader_progress_jump)
+            Text(jumpTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Spacer(Modifier.height(8.dp))
             var local by remember(progression) { mutableStateOf(progression.toFloat()) }
             Row(
@@ -592,20 +626,22 @@ private fun ProgressSheet(
                     local = (local - 0.01f).coerceAtLeast(0f)
                     onJump(local.toDouble())
                 }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "后退 1%")
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.reader_progress_back))
                 }
                 Slider(
                     value = local,
                     onValueChange = { local = it },
                     onValueChangeFinished = { onJump(local.toDouble()) },
                     valueRange = 0f..1f,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { contentDescription = "$jumpTitle ${(local * 100).toInt()}%" },
                 )
                 IconButton(onClick = {
                     local = (local + 0.01f).coerceAtMost(1f)
                     onJump(local.toDouble())
                 }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "前进 1%")
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.reader_progress_forward))
                 }
             }
             Text(
@@ -615,7 +651,7 @@ private fun ProgressSheet(
                 modifier = Modifier.padding(top = 4.dp),
             )
             OutlinedButton(onClick = onDismiss, modifier = Modifier.padding(top = 12.dp)) {
-                Text("关闭")
+                Text(stringResource(R.string.reader_close))
             }
         }
     }
@@ -648,7 +684,7 @@ private fun SearchSheet(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("搜索本书内容…") },
+                placeholder = { Text(stringResource(R.string.reader_search_placeholder)) },
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -663,12 +699,12 @@ private fun SearchSheet(
             Button(
                 onClick = { onSearch(query); keyboard?.hide() },
                 modifier = Modifier.padding(start = 8.dp),
-            ) { Text("搜索") }
+            ) { Text(stringResource(R.string.reader_search)) }
         }
         Spacer(Modifier.height(8.dp))
         when (state) {
             is SearchUiState.Idle -> Text(
-                "输入关键词后按搜索键，在全书查找。",
+                stringResource(R.string.reader_search_idle),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
             )
@@ -679,10 +715,10 @@ private fun SearchSheet(
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("搜索「${state.query}」中…")
+                Text(stringResource(R.string.reader_search_loading, state.query))
             }
             is SearchUiState.Error -> Text(
-                state.message,
+                state.message.resolve(LocalContext.current),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
             )
@@ -699,9 +735,9 @@ private fun ResultsBody(
     onJump: (Locator) -> Unit,
 ) {
     val countText = when {
-        state.resultCount != null -> "找到 ${state.resultCount} 条结果"
-        state.exhausted -> "共 ${state.items.size} 条结果"
-        else -> "已加载 ${state.items.size} 条结果"
+        state.resultCount != null -> stringResource(R.string.reader_search_results_found, state.resultCount)
+        state.exhausted -> stringResource(R.string.reader_search_results_total, state.items.size)
+        else -> stringResource(R.string.reader_search_results_loaded, state.items.size)
     }
     Text(
         countText,
@@ -711,7 +747,7 @@ private fun ResultsBody(
     )
     if (state.items.isEmpty()) {
         Text(
-            "没有匹配「${state.query}」的内容",
+            stringResource(R.string.reader_search_no_match, state.query),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
         )
@@ -766,7 +802,7 @@ private fun SearchResultRow(item: SearchResultItem, onClick: () -> Unit) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .clickable(role = Role.Button) { onClick() }
             .padding(horizontal = 24.dp, vertical = 12.dp),
     )
 }
@@ -807,34 +843,36 @@ private fun TypographySheet(
                 .padding(bottom = 24.dp),
         ) {
             Text(
-                "排版",
+                stringResource(R.string.reader_typography),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .semantics { heading() },
             )
 
             TypographySlider(
-                label = "字号",
+                label = stringResource(R.string.typography_font_size),
                 value = typography.fontSize ?: 1.0,
                 range = 0.5..5.0,
                 valueText = { "${(it * 100).toInt()}%" },
                 onChange = onFontSize,
             )
             TypographySlider(
-                label = "行高",
+                label = stringResource(R.string.typography_line_height),
                 value = typography.lineHeight ?: 1.0,
                 range = 1.0..3.0,
                 valueText = { "%.2f×".format(it) },
                 onChange = onLineHeight,
             )
             TypographySlider(
-                label = "段距",
+                label = stringResource(R.string.typography_paragraph_spacing),
                 value = typography.paragraphSpacing ?: 0.0,
                 range = 0.0..3.0,
                 valueText = { "%.1f em".format(it) },
                 onChange = onParagraphSpacing,
             )
             TypographySlider(
-                label = "页边距",
+                label = stringResource(R.string.typography_page_margins),
                 value = typography.pageMargins ?: 1.0,
                 range = 0.5..4.0,
                 valueText = { "%.1f×".format(it) },
@@ -843,10 +881,10 @@ private fun TypographySheet(
 
             // 对齐（TYPE-01）
             OptionGroup(
-                label = "对齐",
+                label = stringResource(R.string.typography_align),
                 options = listOf(
-                    ReaderTextAlign.JUSTIFY to "两端对齐",
-                    ReaderTextAlign.START to "左对齐",
+                    ReaderTextAlign.JUSTIFY to stringResource(R.string.typography_align_justify),
+                    ReaderTextAlign.START to stringResource(R.string.typography_align_start),
                 ),
                 selected = typography.textAlign,
                 onSelect = onTextAlign,
@@ -854,11 +892,11 @@ private fun TypographySheet(
 
             // 字体（TYPE-01；自定义字体导入是 P1 TYPE-05，这里只给通用字体族预设）
             OptionGroup(
-                label = "字体",
+                label = stringResource(R.string.typography_font),
                 options = listOf(
-                    null to "默认",
-                    "serif" to "衬线",
-                    "sans-serif" to "无衬线",
+                    null to stringResource(R.string.typography_font_default),
+                    "serif" to stringResource(R.string.typography_font_serif),
+                    "sans-serif" to stringResource(R.string.typography_font_sans),
                 ),
                 selected = typography.fontFamily,
                 onSelect = onFontFamily,
@@ -866,10 +904,10 @@ private fun TypographySheet(
 
             // 翻页方式（READ-04：分页 / 纵向滚动）
             OptionGroup(
-                label = "翻页方式",
+                label = stringResource(R.string.typography_paging),
                 options = listOf(
-                    ReaderScrollMode.PAGINATED to "分页",
-                    ReaderScrollMode.SCROLL to "滚动",
+                    ReaderScrollMode.PAGINATED to stringResource(R.string.typography_paging_paginated),
+                    ReaderScrollMode.SCROLL to stringResource(R.string.typography_paging_scroll),
                 ),
                 // null = 分页（引擎默认），UI 显示 PAGINATED 选中。
                 selected = typography.scroll ?: ReaderScrollMode.PAGINATED,
@@ -877,26 +915,34 @@ private fun TypographySheet(
             )
 
             // 音量键翻页开关（READ-03：app 层 Fragment 拦截 KeyEvent，不传 Readium 引擎）。
+            // SET-02：Row 用 toggleable 合并 label+switch 为一个语义节点（TalkBack 读「音量键翻页，开关，开/关」）。
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp)
+                    .toggleable(
+                        value = typography.volumeKeyPaging,
+                        onValueChange = onVolumeKeyPaging,
+                        role = Role.Switch,
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("音量键翻页", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.typography_volume_key), style = MaterialTheme.typography.bodyMedium)
                 Switch(
                     checked = typography.volumeKeyPaging,
-                    onCheckedChange = onVolumeKeyPaging,
+                    onCheckedChange = null, // 点击由 Row 的 toggleable 统一处理，避免双重回调
                 )
             }
 
             // 主题（TYPE-02，含跟随系统）
             OptionGroup(
-                label = "主题",
+                label = stringResource(R.string.typography_theme),
                 options = listOf(
-                    ReaderTheme.SYSTEM to "跟随系统",
-                    ReaderTheme.LIGHT to "日间",
-                    ReaderTheme.SEPIA to "米黄",
-                    ReaderTheme.DARK to "夜间",
+                    ReaderTheme.SYSTEM to stringResource(R.string.common_follow_system),
+                    ReaderTheme.LIGHT to stringResource(R.string.typography_theme_light),
+                    ReaderTheme.SEPIA to stringResource(R.string.typography_theme_sepia),
+                    ReaderTheme.DARK to stringResource(R.string.typography_theme_dark),
                 ),
                 selected = typography.theme,
                 onSelect = onTheme,
@@ -907,9 +953,11 @@ private fun TypographySheet(
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             Text(
-                "显示",
+                stringResource(R.string.typography_display),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 4.dp)
+                    .semantics { heading() },
             )
 
             // 亮度（TYPE-03）：null = 跟随系统（显示为最低档 + 「跟随系统」标注）。
@@ -919,25 +967,33 @@ private fun TypographySheet(
             )
 
             // 常亮开关（TYPE-03：阅读时保持屏幕常亮）。
+            // SET-02：Row 用 toggleable 合并 label+switch（同音量键翻页）。
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp)
+                    .toggleable(
+                        value = displaySettings.keepScreenOn,
+                        onValueChange = onKeepScreenOn,
+                        role = Role.Switch,
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("保持常亮", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.typography_keep_screen_on), style = MaterialTheme.typography.bodyMedium)
                 Switch(
                     checked = displaySettings.keepScreenOn,
-                    onCheckedChange = onKeepScreenOn,
+                    onCheckedChange = null,
                 )
             }
 
             // 方向（TYPE-03，含跟随系统）。
             OptionGroup(
-                label = "方向",
+                label = stringResource(R.string.typography_orientation),
                 options = listOf(
-                    ReaderOrientation.SYSTEM to "跟随系统",
-                    ReaderOrientation.PORTRAIT to "竖屏",
-                    ReaderOrientation.LANDSCAPE to "横屏",
+                    ReaderOrientation.SYSTEM to stringResource(R.string.common_follow_system),
+                    ReaderOrientation.PORTRAIT to stringResource(R.string.typography_orientation_portrait),
+                    ReaderOrientation.LANDSCAPE to stringResource(R.string.typography_orientation_landscape),
                 ),
                 selected = displaySettings.orientation ?: ReaderOrientation.SYSTEM,
                 onSelect = { onOrientation(it) },
@@ -959,6 +1015,8 @@ private fun BrightnessSlider(
     brightness: Float?,
     onChange: (Float?) -> Unit,
 ) {
+    val brightnessLabel = stringResource(R.string.typography_brightness)
+    val followSystemLabel = stringResource(R.string.common_follow_system)
     // null（跟随系统）用 0 作 Slider 显示位置；非 null 用实际值。
     var local by remember(brightness) { mutableStateOf(brightness ?: 0f) }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
@@ -967,9 +1025,9 @@ private fun BrightnessSlider(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("亮度", style = MaterialTheme.typography.bodyMedium)
+            Text(brightnessLabel, style = MaterialTheme.typography.bodyMedium)
             Text(
-                if (brightness == null) "跟随系统" else "${(brightness * 100).toInt()}%",
+                if (brightness == null) followSystemLabel else "${(brightness * 100).toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -979,6 +1037,10 @@ private fun BrightnessSlider(
             onValueChange = { local = it },
             onValueChangeFinished = { onChange(local) },
             valueRange = 0f..1f,
+            modifier = Modifier.semantics {
+                contentDescription = "$brightnessLabel " +
+                    (if (brightness == null) followSystemLabel else "${(brightness * 100).toInt()}%")
+            },
         )
     }
 }
@@ -1015,6 +1077,7 @@ private fun TypographySlider(
             onValueChange = { local = it.toDouble() },
             onValueChangeFinished = { onChange(local) },
             valueRange = range.start.toFloat()..range.endInclusive.toFloat(),
+            modifier = Modifier.semantics { contentDescription = "$label ${valueText(local)}" },
         )
     }
 }
@@ -1038,10 +1101,18 @@ private fun <T> OptionGroup(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             options.forEach { (value, text) ->
-                if (value == selected) {
-                    Button(onClick = { onSelect(value) }) { Text(text) }
+                // SET-02：选中态原仅靠 filled/Outlined 样式区分，对 TalkBack 不可知；
+                // 补 RadioButton 角色 + selected 语义，TalkBack 读「已选中/未选中」。
+                val isSelected = value == selected
+                val optModifier = Modifier.semantics {
+                    role = Role.RadioButton
+                    // 显式 this：避免与 OptionGroup 的 selected 形参混淆（形参是 T?）。
+                    this.selected = isSelected
+                }
+                if (isSelected) {
+                    Button(onClick = { onSelect(value) }, modifier = optModifier) { Text(text) }
                 } else {
-                    OutlinedButton(onClick = { onSelect(value) }) { Text(text) }
+                    OutlinedButton(onClick = { onSelect(value) }, modifier = optModifier) { Text(text) }
                 }
             }
         }
@@ -1065,20 +1136,25 @@ private fun BookmarkSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val now = System.currentTimeMillis()
+    val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("书签", style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.reader_bookmark_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
             if (items.isNotEmpty()) {
-                TextButton(onClick = onClearAll) { Text("清空") }
+                TextButton(onClick = onClearAll) { Text(stringResource(R.string.reader_clear)) }
             }
         }
         if (items.isEmpty()) {
             Text(
-                "本书没有书签",
+                stringResource(R.string.reader_bookmark_empty),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
             )
@@ -1088,26 +1164,26 @@ private fun BookmarkSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onJump(bookmark) }
+                            .clickable(role = Role.Button) { onJump(bookmark) }
                             .padding(start = 24.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                bookmark.excerpt?.takeIf { it.isNotBlank() } ?: "无摘录",
+                                bookmark.excerpt?.takeIf { it.isNotBlank() } ?: stringResource(R.string.bookmark_no_excerpt),
                                 style = MaterialTheme.typography.bodyLarge,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                relativeTime(bookmark.createdAt, now),
+                                relativeTime(bookmark.createdAt, now).resolve(context),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 2.dp),
                             )
                         }
                         IconButton(onClick = { onDelete(bookmark) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "删除书签")
+                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.reader_bookmark_delete))
                         }
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 24.dp))
@@ -1137,23 +1213,28 @@ private fun AnnotationSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val now = System.currentTimeMillis()
+    val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("笔记 / 高亮", style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.reader_annotation_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { heading() },
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onExport) { Text("导出") }
+                TextButton(onClick = onExport) { Text(stringResource(R.string.reader_annotation_export)) }
                 if (items.isNotEmpty()) {
-                    TextButton(onClick = onClearAll) { Text("清空") }
+                    TextButton(onClick = onClearAll) { Text(stringResource(R.string.reader_clear)) }
                 }
             }
         }
         if (items.isEmpty()) {
             Text(
-                "没有高亮 / 笔记（长按正文选中文字后选「高亮」）",
+                stringResource(R.string.reader_annotation_empty),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
             )
@@ -1163,39 +1244,61 @@ private fun AnnotationSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onJump(annotation) }
+                            .clickable(role = Role.Button) { onJump(annotation) }
                             .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         // 四色调色板（当前色加环高亮，点击切换高亮颜色）
+                        // SET-02：色点 12/16dp 远小于 48dp 触控目标，且无标签、仅靠颜色区分（违反「不只靠颜色」）。
+                        // 外层 48dp 可点热区 + contentDescription（色名）+ RadioButton 角色 + selected 态，
+                        // TalkBack 读「黄，单选按钮，已选中」；视觉圆点保留小尺寸不变。
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             HighlightColor.values().forEach { color ->
-                                val selected = color == annotation.color
+                                val isSelected = color == annotation.color
+                                val colorName = stringResource(
+                                    when (color) {
+                                        HighlightColor.YELLOW -> R.string.color_yellow
+                                        HighlightColor.GREEN -> R.string.color_green
+                                        HighlightColor.BLUE -> R.string.color_blue
+                                        HighlightColor.PINK -> R.string.color_pink
+                                    },
+                                )
                                 Box(
                                     modifier = Modifier
                                         .padding(end = 4.dp)
-                                        .size(if (selected) 16.dp else 12.dp)
-                                        .background(color.toComposeColor(), CircleShape)
-                                        .then(
-                                            if (selected) {
-                                                Modifier.border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                                            } else {
-                                                Modifier.clickable { onColorChange(annotation, color) }
-                                            },
-                                        ),
-                                )
+                                        .size(36.dp)
+                                        .clickable(role = Role.RadioButton) { onColorChange(annotation, color) }
+                                        .semantics {
+                                            contentDescription = colorName
+                                            selected = isSelected
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(if (isSelected) 16.dp else 12.dp)
+                                            .background(color.toComposeColor(), CircleShape)
+                                            .then(
+                                                if (isSelected) {
+                                                    Modifier.border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                                } else {
+                                                    Modifier
+                                                },
+                                            ),
+                                    )
+                                }
                             }
                         }
                         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(
-                                annotation.selectedText.ifBlank { "（空选区）" },
+                                annotation.selectedText.ifBlank { stringResource(R.string.annotation_empty_selection) },
                                 style = MaterialTheme.typography.bodyLarge,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             annotation.note?.takeIf { it.isNotBlank() }?.let { note ->
                                 Text(
-                                    "笔记：$note",
+                                    stringResource(R.string.note_label, note),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,
@@ -1204,17 +1307,17 @@ private fun AnnotationSheet(
                                 )
                             }
                             Text(
-                                relativeTime(annotation.createdAt, now),
+                                relativeTime(annotation.createdAt, now).resolve(context),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 2.dp),
                             )
                         }
                         IconButton(onClick = { onEdit(annotation) }) {
-                            Icon(Icons.Filled.Edit, contentDescription = "编辑笔记")
+                            Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.reader_annotation_edit))
                         }
                         IconButton(onClick = { onDelete(annotation) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "删除高亮")
+                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.reader_annotation_delete))
                         }
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 24.dp))
@@ -1241,11 +1344,11 @@ private fun NoteEditDialog(
     var note by remember { mutableStateOf(initialNote ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑笔记") },
+        title = { Text(stringResource(R.string.reader_note_title)) },
         text = {
             Column {
                 Text(
-                    selectedText.ifBlank { "（空选区）" },
+                    selectedText.ifBlank { stringResource(R.string.annotation_empty_selection) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
@@ -1255,18 +1358,18 @@ private fun NoteEditDialog(
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
-                    placeholder = { Text("写点笔记…") },
+                    placeholder = { Text(stringResource(R.string.reader_note_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(note.ifBlank { null }) }) { Text("保存") }
+            TextButton(onClick = { onConfirm(note.ifBlank { null }) }) { Text(stringResource(R.string.reader_note_save)) }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onDelete) { Text("删除") }
-                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(onClick = onDelete) { Text(stringResource(R.string.reader_note_delete)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.reader_note_cancel)) }
             }
         },
     )

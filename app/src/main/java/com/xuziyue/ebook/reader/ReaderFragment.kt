@@ -199,11 +199,11 @@ class ReaderFragment : Fragment() {
             // 能力矩阵 gating（红线 #2）：文字选择相关能力为 false 时隐藏对应菜单项（PDF V1 生效）。
             val caps = viewModel.capabilities.value
             if (caps.canHighlight) {
-                menu.add(0, MENU_HIGHLIGHT_ID, 0, "高亮")
+                menu.add(0, MENU_HIGHLIGHT_ID, 0, getString(R.string.reader_menu_highlight))
             }
             if (caps.canCopyShare) {
-                menu.add(0, MENU_COPY_ID, 0, "复制")
-                menu.add(0, MENU_SHARE_ID, 0, "分享")
+                menu.add(0, MENU_COPY_ID, 0, getString(R.string.reader_menu_copy))
+                menu.add(0, MENU_SHARE_ID, 0, getString(R.string.reader_menu_share))
             }
             return true
         }
@@ -250,7 +250,7 @@ class ReaderFragment : Fragment() {
         if (text.isNullOrBlank()) return
         val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("ebook", text))
-        Toast.makeText(requireContext(), "已复制", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.reader_copied), Toast.LENGTH_SHORT).show()
     }
 
     /** 系统分享选中文字（READ-07；空选区不操作；交系统 chooser 选择目标）。 */
@@ -261,7 +261,7 @@ class ReaderFragment : Fragment() {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
         }
-        startActivity(Intent.createChooser(intent, "分享选中文字"))
+        startActivity(Intent.createChooser(intent, getString(R.string.reader_share_chooser)))
     }
 
     @OptIn(ExperimentalReadiumApi::class)

@@ -3,6 +3,7 @@ package com.xuziyue.ebook.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.xuziyue.ebook.R
 import java.io.File
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,7 @@ class BookFileImporter(private val context: Context) {
             val ext = extensionOf(uri) ?: "epub"
             val (hash, file) = copyWithHash({
                 context.contentResolver.openInputStream(uri)
-                    ?: throw java.io.IOException("无法打开所选文件：$uri")
+                    ?: throw java.io.IOException(context.getString(R.string.error_open_file, uri))
             }, ext)
             ImportedBook(hash, file)
         }

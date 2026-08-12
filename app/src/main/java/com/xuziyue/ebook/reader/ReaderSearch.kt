@@ -1,5 +1,6 @@
 package com.xuziyue.ebook.reader
 
+import com.xuziyue.ebook.ui.UserMessage
 import org.readium.r2.shared.publication.Locator
 
 /**
@@ -39,7 +40,7 @@ sealed interface SearchUiState {
         val exhausted: Boolean,
     ) : SearchUiState
 
-    data class Error(val message: String) : SearchUiState
+    data class Error(val message: UserMessage) : SearchUiState
 }
 
 /**

@@ -3,9 +3,11 @@ package com.xuziyue.ebook.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.model.Book
 import com.xuziyue.ebook.model.ReadingStatus
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
+import com.xuziyue.ebook.ui.UserMessage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.UUID
@@ -33,19 +35,19 @@ class ImportBookUseCase(
     sealed class Outcome {
         data class Imported(val bookId: String) : Outcome()
         data class AlreadyExists(val bookId: String) : Outcome()
-        data class Failed(val message: String) : Outcome()
+        data class Failed(val message: UserMessage) : Outcome()
     }
 
     suspend fun importUri(uri: Uri): Outcome = withContext(Dispatchers.IO) {
         val imported = importer.importFromUri(uri).getOrElse {
-            return@withContext Outcome.Failed("导入失败：${it.message}")
+            return@withContext Outcome.Failed(UserMessage.Res(R.string.import_failed, listOf(it.message ?: "")))
         }
         commit(imported.contentHash, imported.file)
     }
 
     suspend fun importAsset(assetName: String): Outcome = withContext(Dispatchers.IO) {
         val imported = importer.copyAssetEpub(assetName).getOrElse {
-            return@withContext Outcome.Failed("样本导入失败：${it.message}")
+            return@withContext Outcome.Failed(UserMessage.Res(R.string.import_sample_failed, listOf(it.message ?: "")))
         }
         commit(imported.contentHash, imported.file)
     }
@@ -61,7 +63,10 @@ class ImportBookUseCase(
         // 2. 提取元数据 + 封面；open 失败则删书文件（无 DB 引用，安全）。
         val meta = extractor.extract(file, hash, ext).getOrElse {
             file.delete()
-            return Outcome.Failed(it.message ?: "无法解析书籍")
+            val msg = it.message
+            return Outcome.Failed(
+                if (msg != null) UserMessage.Raw(msg) else UserMessage.Res(R.string.import_parse_failed),
+            )
         }
 
         val bookId = UUID.randomUUID().toString()
@@ -93,7 +98,7 @@ class ImportBookUseCase(
         } catch (e: Exception) {
             file.delete()
             coverPath?.let { File(it).delete() }
-            Outcome.Failed("写入数据库失败：${e.message}")
+            Outcome.Failed(UserMessage.Res(R.string.import_db_failed, listOf(e.message ?: "")))
         }
     }
 

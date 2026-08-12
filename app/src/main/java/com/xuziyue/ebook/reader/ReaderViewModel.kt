@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.BookmarkRepository
@@ -21,6 +22,7 @@ import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
+import com.xuziyue.ebook.ui.UserMessage
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
 import com.xuziyue.ebook.reader.readium.toEpubPreferences
 import com.xuziyue.ebook.reader.readium.toReaderCapabilities
@@ -235,7 +237,7 @@ class ReaderViewModel @Inject constructor(
             clearSearch()
 
             val book = bookRepository.getById(bookId) ?: run {
-                _uiState.value = ReaderUiState.Error("书籍不存在：$bookId")
+                _uiState.value = ReaderUiState.Error(UserMessage.Res(R.string.error_book_missing, listOf(bookId)))
                 return@launch
             }
             val file = File(book.filePath)
@@ -283,7 +285,7 @@ class ReaderViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     if (bookId == currentBookId) {
-                        _uiState.value = ReaderUiState.Error(error.message)
+                        _uiState.value = ReaderUiState.Error(UserMessage.Raw(error.message))
                     }
                 }
         }
@@ -548,14 +550,14 @@ class ReaderViewModel @Inject constructor(
             // Publication.search 返回 SearchIterator?（非 Try；失败返回 null，iterator.next() 才返回 Try<LocatorCollection, SearchError>）。
             // EPUB/TXT 经 isSearchable gating 已保证可搜；null 兜底给可理解提示。
             val iterator = publication.search(trimmed) ?: run {
-                _searchState.value = SearchUiState.Error("搜索失败，请换个关键词试试")
+                _searchState.value = SearchUiState.Error(UserMessage.Res(R.string.error_search))
                 return@launch
             }
             searchIterator = iterator
             val count = iterator.resultCount
             val collection = iterator.next().getOrNull()
             if (collection == null) {
-                _searchState.value = SearchUiState.Error("搜索失败，请换个关键词试试")
+                _searchState.value = SearchUiState.Error(UserMessage.Res(R.string.error_search))
                 return@launch
             }
             val items = mapLocators(collection.locators)

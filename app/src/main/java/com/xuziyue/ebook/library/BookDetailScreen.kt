@@ -29,13 +29,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.model.Book
 import com.xuziyue.ebook.ui.BookCover
 import com.xuziyue.ebook.ui.relativeTime
+import com.xuziyue.ebook.ui.resolve
 
 /**
  * 书籍详情页（LIB-04）：元数据 / 进度 / 文件信息 / 书签·笔记数 / 继续阅读入口。
@@ -54,18 +60,18 @@ fun BookDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(state.book?.title ?: "书籍详情") },
+                title = { Text(state.book?.title ?: stringResource(R.string.detail_title_default)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.detail_back))
                     }
                 },
             )
         },
     ) { padding ->
         when {
-            state.loading -> CenterText(padding, "加载中…")
-            state.book == null -> CenterText(padding, "这本书不见了")
+            state.loading -> CenterText(padding, stringResource(R.string.detail_loading))
+            state.book == null -> CenterText(padding, stringResource(R.string.detail_not_found))
             else -> DetailContent(state, padding, onRead)
         }
     }
@@ -84,6 +90,7 @@ private fun CenterText(padding: PaddingValues, text: String) {
 @Composable
 private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRead: () -> Unit) {
     val book: Book = state.book!!
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -116,7 +123,7 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
                 }
                 book.language?.let {
                     Text(
-                        "语言：$it",
+                        stringResource(R.string.detail_language, it),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -138,7 +145,7 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
         SectionDivider()
 
         // ② 阅读进度
-        SectionTitle("阅读进度")
+        SectionTitle(stringResource(R.string.detail_section_progress))
         Spacer(Modifier.height(8.dp))
         val p = state.progression
         if (p != null) {
@@ -152,7 +159,10 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
             }
             book.lastOpenedAt?.let {
                 Text(
-                    "最近阅读：${relativeTime(it, System.currentTimeMillis())}",
+                    stringResource(
+                        R.string.detail_last_opened,
+                        relativeTime(it, System.currentTimeMillis()).resolve(context),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -160,7 +170,7 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
             }
         } else {
             Text(
-                "未开始",
+                stringResource(R.string.detail_not_started),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -169,19 +179,19 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
         SectionDivider()
 
         // ③ 文件信息（不展示路径 / contentHash——红线 #8：UI 不含完整路径；hash 对用户无意义）
-        SectionTitle("文件信息")
+        SectionTitle(stringResource(R.string.detail_section_file))
         Spacer(Modifier.height(8.dp))
-        FileInfoRow("格式", "${book.format}（${book.mediaType}）")
-        FileInfoRow("大小", formatFileSize(book.fileSize))
-        FileInfoRow("导入时间", relativeTime(book.importedAt, System.currentTimeMillis()))
+        FileInfoRow(stringResource(R.string.detail_file_format_label), "${book.format}（${book.mediaType}）")
+        FileInfoRow(stringResource(R.string.detail_file_size_label), formatFileSize(book.fileSize))
+        FileInfoRow(stringResource(R.string.detail_file_imported_label), relativeTime(book.importedAt, System.currentTimeMillis()).resolve(context))
 
         SectionDivider()
 
         // ④ 书签 · 笔记数
-        SectionTitle("书签 · 笔记")
+        SectionTitle(stringResource(R.string.detail_section_annotations))
         Spacer(Modifier.height(8.dp))
         Text(
-            "📑 ${state.bookmarkCount} 书签 · 🖊 ${state.annotationCount} 笔记",
+            stringResource(R.string.detail_counts, state.bookmarkCount, state.annotationCount),
             style = MaterialTheme.typography.bodyMedium,
         )
 
@@ -189,14 +199,15 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
 
         // ⑤ 继续阅读入口（有进度=继续，未读=开始）
         Button(onClick = onRead, modifier = Modifier.fillMaxWidth()) {
-            Text(if (p != null) "继续阅读" else "开始阅读")
+            Text(if (p != null) stringResource(R.string.detail_continue) else stringResource(R.string.detail_start))
         }
     }
 }
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium)
+    // SET-02：章节标题标 heading()，TalkBack 可按标题跳转（阅读进度 / 文件信息 / 书签·笔记）。
+    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
 }
 
 @Composable

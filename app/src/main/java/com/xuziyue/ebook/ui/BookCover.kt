@@ -19,6 +19,9 @@ import java.io.File
  *
  * coverPath 为空（封面缺失）时用占位：surfaceVariant 底 + 书名首字。
  * 尺寸由调用方经 [modifier] 控制（书库列表固定 48×66，网格 fillMaxWidth + aspectRatio 0.66，详情页大封面）。
+ *
+ * SET-02：所有调用方都在封面旁展示书名 Text，故封面图片标记为装饰性（contentDescription = null），
+ * 避免 TalkBack 把书名读两遍；书名由旁边的 Text 语义传达。
  */
 @Composable
 fun BookCover(coverPath: String?, title: String, modifier: Modifier = Modifier) {
@@ -26,7 +29,7 @@ fun BookCover(coverPath: String?, title: String, modifier: Modifier = Modifier) 
     if (coverPath != null) {
         AsyncImage(
             model = File(coverPath),
-            contentDescription = "《$title》封面",
+            contentDescription = null,
             modifier = modifier.clip(shape),
             contentScale = ContentScale.Crop,
         )

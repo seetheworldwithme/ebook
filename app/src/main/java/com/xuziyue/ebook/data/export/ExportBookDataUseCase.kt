@@ -2,6 +2,7 @@ package com.xuziyue.ebook.data.export
 
 import android.content.Context
 import android.net.Uri
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.db.AnnotationDao
 import com.xuziyue.ebook.data.db.AnnotationEntity
 import com.xuziyue.ebook.data.db.BookDao
@@ -10,6 +11,7 @@ import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.BookmarkEntity
 import com.xuziyue.ebook.data.db.ReadingProgressDao
 import com.xuziyue.ebook.data.db.ReadingProgressEntity
+import com.xuziyue.ebook.ui.UserMessage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +46,7 @@ class ExportBookDataUseCase(
     /** 导出结果（message 直接映射用户可见提示，CLAUDE.md：可理解错误）。 */
     sealed class Outcome {
         data class Success(val format: Format, val items: Int) : Outcome()
-        data class Failed(val message: String) : Outcome()
+        data class Failed(val message: UserMessage) : Outcome()
     }
 
     /**
@@ -53,23 +55,29 @@ class ExportBookDataUseCase(
      */
     suspend fun export(bookId: String, format: Format, destUri: Uri): Outcome = withContext(Dispatchers.IO) {
         val book = bookDao.getById(bookId)
-            ?: return@withContext Outcome.Failed("书籍不存在")
+            ?: return@withContext Outcome.Failed(UserMessage.Res(R.string.error_book_not_found))
         val annotations = annotationDao.snapshotForBook(bookId)
         val bookmarks = bookmarkDao.forBook(bookId)
         val progress = progressDao.get(bookId)
 
         if (annotations.isEmpty() && bookmarks.isEmpty() && progress == null) {
-            return@withContext Outcome.Failed("还没有书签 / 高亮 / 笔记可导出")
+            return@withContext Outcome.Failed(UserMessage.Res(R.string.error_export_empty))
         }
 
         val dto = buildExportDto(book, annotations, bookmarks, progress, System.currentTimeMillis())
         val content = when (format) {
             Format.JSON -> dto.toJson()
-            Format.MARKDOWN -> dto.toMarkdown()
+            Format.MARKDOWN -> dto.toMarkdown(context)
         }
         writeAtomically(destUri, content).fold(
             onSuccess = { Outcome.Success(format, annotations.size + bookmarks.size) },
-            onFailure = { Outcome.Failed("写入失败：${it.message ?: "未知错误"}") },
+            onFailure = {
+                val msg = it.message
+                Outcome.Failed(
+                    if (msg != null) UserMessage.Res(R.string.error_export_write, listOf(msg))
+                    else UserMessage.Res(R.string.error_export_write_unknown),
+                )
+            },
         )
     }
 
@@ -126,7 +134,7 @@ class ExportBookDataUseCase(
         try {
             tmp.writeText(content)
             val out = context.contentResolver.openOutputStream(destUri)
-                ?: error("无法打开目标位置")
+                ?: error(context.getString(R.string.error_open_dest))
             out.use { tmp.inputStream().copyTo(it) }
         } finally {
             tmp.delete()

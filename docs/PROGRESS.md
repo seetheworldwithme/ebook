@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 24 | 0 |
+| P0（MVP 必做） | 28 | 24 | 2 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 24 | 0 |
+| 合计 | 42 | 24 | 2 |
 
-> 当前进度：24 ✅ / 0 🚧（TYPE-04 + DATA-02 + SET-04 真机回归全过转 ✅）。详见文末变更记录。
+> 当前进度：24 ✅ / 2 🚧（SET-01 i18n + SET-02 无障碍代码完成，待真机回归转 ✅）。详见文末变更记录。
 
 ---
 
@@ -95,8 +95,8 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| SET-01 | ⬜ | 简体中文 + 英文；所有用户可见文案进入资源文件 |
-| SET-02 | ⬜ | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度 |
+| SET-01 | 🚧 | 简体中文 + 英文；所有用户可见文案进入资源文件 |
+| SET-02 | 🚧 | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度 |
 | SET-03 | ⬜ | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达 |
 | SET-04 | ✅ | 本地内容默认不上传；无网络权限可完成核心阅读。合刀：`OfflineGuaranteeTest` 4 项固化不变量——源码 Manifest 零网络权限 / 合并后发布 Manifest 不含 INTERNET / catalog 无网络分析库 / 业务源码无直接网络调用（Readium `DefaultHttpClient` 白名单：无 INTERNET 兜底+本地惰性）。实测合并 Manifest 仅有依赖带入的 ACCESS_NETWORK_STATE+WAKE_LOCK（查询/保活，不含 INTERNET） |
 | SET-05 | ⬜ | 隐私说明、开源许可证页、崩溃日志开关；日志不含正文 / 摘录 / 完整路径 |
@@ -166,6 +166,23 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-12）：**刀2 SET-02 无障碍代码完成 ⬜→🚧（在刀1 i18n 字符串资源基础上补语义）。** 对齐 design.md §4.6 P0「TalkBack / 语义标签 / 焦点顺序 / 48dp 最小触控目标 / 高对比度」+ REL-06「TalkBack 能完成 导入→阅读→加书签→回书库」。
+> **触控目标（48dp，最严重项）**：批注面板**高亮四色圆点**原 12/16dp（远低于 48dp）、无标签、仅靠颜色区分（违反「不只靠颜色」）→ 外层 36dp 可点热区（一行 4 色 ×36dp 放得下，视觉圆点保留小尺寸）+ `contentDescription`（色名 黄/绿/蓝/粉，复用导出色名资源）+ `Role.RadioButton` + `selected` 语义，TalkBack 读「黄，单选按钮，已选中」。所有 IconButton / TextButton / Tab 本就用 M3 默认（≥48dp），无需改。
+> **语义标签缺失（Slider / Switch / 不可见点击区 / 进度指示）**：① **6 个 Slider**（进度 / 亮度 / 4 个排版滑块）原无名 → 各加 `Modifier.semantics { contentDescription = "$label $value" }`，TalkBack 读「字号 130%」「亮度 50%」等；② **2 个 Switch**（音量键翻页 / 保持常亮）原 label Text 与 Switch 分离、Switch 无名 → Row 用 `toggleable(role = Role.Switch)` 合并为单语义节点（TalkBack 读「音量键翻页，开关，开」），Switch 的 `onCheckedChange` 置 null 由 Row 统一处理；③ **翻页点击区**（左右各 20% 宽不可见 Box）原无标签且抢在工具栏前聚焦 → 加 `contentDescription`（上一页/下一页）+ `Role.Button`，既消除「无名可点」又给 TalkBack 用户一个显式翻页入口（音量键/滑动对 TalkBack 不友好）；④ **进度指示器**（阅读器 Loading 圆环 / 书库导入进度条）加 `contentDescription`（正在加载/正在导入）。
+> **标题语义 heading()**：6 个 sheet 标题（目录/跳转进度/排版/显示/书签/笔记·高亮）+ 详情页 3 个 SectionTitle（阅读进度/文件信息/书签·笔记）+ 书库「书库」标题 → 全部加 `Modifier.semantics { heading() }`，TalkBack 可按标题跳转。
+> **角色与状态**：① **OptionGroup 选项组**（对齐/字体/翻页/主题/方向 共 5 组）原选中态仅靠 filled/Outlined 按钮样式区分 → 各选项加 `role = Role.RadioButton` + `this.selected = isSelected`（显式 this 避免与 OptionGroup 形参 `selected: T?` 混淆——踩坑：裸 `selected=` 被解析成形参赋值报「val 不能重赋值」）；② 行点击 `clickable`（目录/搜索结果/书签/笔记行）补 `Role.Button`。
+> **去重 / 装饰**：BookCover 在书库卡 / 网格卡 / 详情页都在封面旁展示书名 → 封面图片 `contentDescription = null`（装饰性），避免 TalkBack 把书名读两遍（书名由旁 Text 语义传达）；删除随之无用的 `cover_description` 资源（zh/en 同删，保 key-parity）。
+> **对比度（已审计结论）**：App UI 用 M3 baseline 中性色 + 动态色（Material You），明/暗模式正文对比均 ≥4.5:1（`onSurfaceVariant #49454F` 在 surface 上 ≈9.4:1），**通过**，保持动态色默认开。**高亮色 vs 夜间正文**：YELLOW/GREEN/BLUE/PINK 裸值在深色正文下不达 AA，但实际由 ReadiumCSS 以混合/透明度渲染高亮背景（非 app 刷纯色），可读性由 Readium 保证 → **已知边界，真机肉眼复核**；若夜间不可读则 V1 注入覆盖 ReadiumCSS 高亮样式兜底。**顺手修一致性**：`HighlightColorMappings` YELLOW tint 原 `Color.YELLOW`(#FFFF00) 与 compose `#FFEB3B` 不一致 → 统一 `#FFEB3B`（Material Yellow 500，避免过亮刺眼）。
+> **测试 / 验证**：不引入 Compose UI 仪器测试（语义最适合 TalkBack 真机验证；加 ui-test-junit4 依赖 ROI 低）→ `:app:assembleDebug` + `:app:lintDebug` **BUILD SUCCESSFUL**（lint 0 error，`ContentDescription`/`HardcodedText` 全清）+ `:app:testDebugUnitTest` **138 passed**（0 fail/0 error/0 skip）。
+> **仅单测 + 编译 + lint，未真机回归**——待真机开 TalkBack 验 REL-06 核心路径「导入一本书 → 开始阅读 → 加书签 → 回到书库」全程可完成 + 夜间高亮可读性肉眼复核 + 色点 / 开关 / 滑块 TalkBack 播报正确，兜底后转 ✅。TalkBack 真机需徐先生手指（无法 adb 全自动），符合项目惯例。
+
+> 实现状态（2026-08-12）：**刀1 SET-01 i18n 文案资源化代码完成 ⬜→🚧（与 SET-02 同属 SET 域，SET-02 语义标签依赖 SET-01 的字符串资源，故先做地基）。** 全部 ~95 个用户可见中文文案从硬编码移入资源文件，补齐英文翻译（简中默认 + 英文），业务层错误态改走可本地化消息类型。
+> **核心架构（非 UI 文案可本地化）**：新增 `UserMessage` 密封类型（`ui/UserMessage.kt`，`Res(@StringRes resId, args)` + `Raw(text)` 兜底）+ `resolve(context)`。业务层（UseCase/ViewModel/`relativeTime` 纯函数）**零 Context 依赖**产出 `UserMessage`，UI 层解析为字符串——保 ViewModel 可单测（断言 resId 而非脆性字面文案），又满足「所有用户可见文案进入资源文件」。改造点：`ImportBookUseCase.Outcome.Failed(String)` / `ExportBookDataUseCase.Outcome.Failed(String)` / `ReaderUiState.Error(String)` / `SearchUiState.Error(String)` 全部 `String→UserMessage`；`relativeTime()` 返回 `UserMessage`（可译走 Res、日期串走 Raw）。
+> **资源文件**：`values/strings.xml`（默认简中，~95 key 按前缀分组 library_/detail_/reader_/typography_/color_/import_/export_/error_/time_）+ `values-en/strings.xml`（英文一一对应）；`app/build.gradle.kts` 加 `resourceConfigurations += listOf("zh","en")` 裁剪库带入的其它语言。导出 **Markdown 人可读标签**也资源化（`ExportSerializers.toMarkdown(context)`，标签随系统语言）；JSON schema key 保持英文稳定不本地化。
+> **UI 层**：Compose 用 `stringResource(R.string.xxx)`、Fragment 用 `getString`；Toast 错误态经 `UserMessage.resolve(context)`；`context.getString(R.string...)` 在 `LaunchedEffect` 协程里会触发 lint `LocalContextGetResourceValueCall`——静态文案 hoist 到 Composable 作用域用 `stringResource`，动态模板（导出条数/格式名）取模板串后 `String.format` 填充。
+> **测试（新增 4 + 改写 3，全绿）**：① 新增 `StringResourceKeysTest`（4 项，纯 XML 解析）——断言 values/ 与 values-en/ **key 集合完全相等**（无漏译/多余）+ 无重复 key + 无空值（防回退 regression）；② 改写 `RelativeTimeTest`（8 项）断言 `UserMessage.Res.resId`+args 而非脆性中文字面；③ 改 `ExportSerializersTest` 转 Robolectric（toMarkdown 需 Context）+ 标签断言用 `context.getString(R.string...)`（locale 无关）；④ 改 `ExportBookDataUseCaseTest` 失败态断言改 resId。`:core:model` **20** / `:reader:readium` **46** / `:app` **138** = **204 单测全绿**（0 fail/0 error/0 skip）；`:app:assembleDebug` + `:app:lintDebug` **BUILD SUCCESSFUL**（lint 0 error——`MissingTranslation`/`HardcodedText`/`ContentDescription` 全清，间接证明 zh/en key 齐 + 无残留硬编码）。
+> **仅单测 + 编译 + lint，未真机回归**——待真机验「① 系统语言切英文→全部界面英文化（书库/详情/阅读器/排版/搜索/批注/导出 Toast）② 系统语言中文→文案不变 ③ 无视觉回归（布局/emoji 计数正常）④ 导出 MD 标签随语言」兜底后转 ✅。i18n 属低风险文本改动，lint + key-parity 测试已较强覆盖，真机主要为肉眼确认。
 
 > 实现状态（2026-08-12）：**合刀 TYPE-04 + DATA-02 + SET-04 完成（MVP 质量地基），三需求 ⬜→✅。**
 > **TYPE-04 排版回归样本集**：① **样本**——`scripts/gen_typography_fixtures.py`（纯 stdlib，结构对齐自有 `TxtEpubConverter`）生成 `samples/public/typography/{ruby,rtl,vertical}.epub`（ruby=`<ruby><rt>` 拼音 / rtl=`dir=rtl`+`page-progression-direction=rtl` 阿拉伯文 / vertical=`writing-mode:vertical-rl` 静夜思），CJK 横排复用 `chinese-shanhaijing.epub`；README 含来源/许可证 + 真机肉眼回归清单。② **JVM 结构校验** `TypographySamplesTest`（`:reader:readium`，4 项）解压断言特征标记存在 + 合法 EPUB（mimetype 首项 STORED）。③ **仪器开书冒烟** `TypographySamplesOpenTest`（`:app` androidTest，3 项）经生产 `ReadiumFacade`+`OpenBookUseCase` 打开断言语言/RTL（连机跑）。④ **结论**：EPUB ruby/RTL/竖排透传 ReadiumCSS WebView 渲染，**应用零自定义 CSS、无需新增处理代码**；TXT 路径只产 `<p>` 无内联标记故无 ruby。

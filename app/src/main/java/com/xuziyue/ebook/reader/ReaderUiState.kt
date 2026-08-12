@@ -1,5 +1,6 @@
 package com.xuziyue.ebook.reader
 
+import com.xuziyue.ebook.ui.UserMessage
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.shared.publication.Locator
@@ -26,5 +27,5 @@ sealed interface ReaderUiState {
         val preferences: EpubPreferences,
     ) : ReaderUiState
 
-    data class Error(val message: String) : ReaderUiState
+    data class Error(val message: UserMessage) : ReaderUiState
 }

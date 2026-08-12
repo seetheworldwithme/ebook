@@ -1,0 +1,182 @@
+<resources>
+    <string name="app_name">Ebook Reader</string>
+
+    <!-- Common -->
+    <string name="common_follow_system">Follow system</string>
+
+    <!-- Library (LIB) -->
+    <string name="library_title">Library</string>
+    <string name="library_sort">Sort</string>
+    <string name="library_sort_recent">Recently read</string>
+    <string name="library_sort_imported">Date imported</string>
+    <string name="library_sort_title">Title</string>
+    <string name="library_view_grid">Grid</string>
+    <string name="library_view_list">List</string>
+    <string name="library_import">Import</string>
+    <string name="library_search_placeholder">Search title or author</string>
+    <string name="library_sample_alice">Load sample \"Alice\" (EPUB2)</string>
+    <string name="library_tab_recent">Recent</string>
+    <string name="library_tab_all">All</string>
+    <string name="library_tab_finished">Finished</string>
+    <string name="library_empty_search">No books matching \"%1$s\"</string>
+    <string name="library_empty_finished">No finished books yet</string>
+    <string name="library_empty_recent">No recently read books</string>
+    <string name="library_empty_all">No books yet — import one to start</string>
+    <string name="library_unread">Unread</string>
+
+    <!-- Book detail (LIB-04) -->
+    <string name="detail_title_default">Book details</string>
+    <string name="detail_loading">Loading…</string>
+    <string name="detail_not_found">This book is gone</string>
+    <string name="detail_back">Back</string>
+    <string name="detail_language">Language: %1$s</string>
+    <string name="detail_section_progress">Reading progress</string>
+    <string name="detail_last_opened">Last read: %1$s</string>
+    <string name="detail_not_started">Not started</string>
+    <string name="detail_section_file">File info</string>
+    <string name="detail_file_format_label">Format</string>
+    <string name="detail_file_size_label">Size</string>
+    <string name="detail_file_imported_label">Imported</string>
+    <string name="detail_section_annotations">Bookmarks · Notes</string>
+    <string name="detail_counts">📑 %1$d Bookmarks · 🖊 %2$d Notes</string>
+    <string name="detail_continue">Continue reading</string>
+    <string name="detail_start">Start reading</string>
+
+    <!-- Reader common (READ) -->
+    <string name="reader_back_to_library">Back to library</string>
+    <string name="reader_toc">Contents</string>
+    <string name="reader_search">Search</string>
+    <string name="reader_go_back">Go back to previous position</string>
+    <string name="reader_add_bookmark">Add bookmark</string>
+    <string name="reader_remove_bookmark">Remove bookmark</string>
+    <string name="reader_progress">Progress %1$s</string>
+    <string name="reader_font_decrease">Decrease font size</string>
+    <string name="reader_font_increase">Increase font size</string>
+    <string name="reader_typography">Typography</string>
+    <string name="reader_bookmarks_count">Bookmarks %1$d</string>
+    <string name="reader_annotations_count">Notes %1$d</string>
+    <string name="reader_back">Back</string>
+    <string name="reader_clear">Clear all</string>
+    <string name="reader_page_prev">Previous page</string>
+    <string name="reader_page_next">Next page</string>
+    <string name="reader_loading">Loading</string>
+    <string name="reader_importing">Importing</string>
+
+    <!-- TOC / Progress sheet (READ-02) -->
+    <string name="reader_toc_empty">This book has no table of contents</string>
+    <string name="reader_progress_jump">Jump to progress</string>
+    <string name="reader_progress_back">Back 1%</string>
+    <string name="reader_progress_forward">Forward 1%</string>
+    <string name="reader_close">Close</string>
+
+    <!-- In-book search (READ-05) -->
+    <string name="reader_search_placeholder">Search this book…</string>
+    <string name="reader_search_idle">Enter a keyword and press search to look through the whole book.</string>
+    <string name="reader_search_loading">Searching for \"%1$s\"…</string>
+    <string name="reader_search_results_found">Found %1$d results</string>
+    <string name="reader_search_results_total">%1$d results in total</string>
+    <string name="reader_search_results_loaded">%1$d results loaded</string>
+    <string name="reader_search_no_match">No content matching \"%1$s\"</string>
+
+    <!-- Bookmark sheet (READ-06) -->
+    <string name="reader_bookmark_title">Bookmarks</string>
+    <string name="reader_bookmark_empty">No bookmarks in this book</string>
+    <string name="bookmark_no_excerpt">No excerpt</string>
+    <string name="reader_bookmark_delete">Delete bookmark</string>
+
+    <!-- Annotation / highlight sheet (READ-07) -->
+    <string name="reader_annotation_title">Notes &amp; Highlights</string>
+    <string name="reader_annotation_export">Export</string>
+    <string name="reader_annotation_empty">No highlights or notes yet (long-press text and choose \"Highlight\")</string>
+    <string name="reader_annotation_edit">Edit note</string>
+    <string name="reader_annotation_delete">Delete highlight</string>
+    <string name="annotation_empty_selection">(empty selection)</string>
+    <string name="note_label">Note: %1$s</string>
+
+    <!-- Note edit dialog -->
+    <string name="reader_note_title">Edit note</string>
+    <string name="reader_note_placeholder">Write a note…</string>
+    <string name="reader_note_save">Save</string>
+    <string name="reader_note_delete">Delete</string>
+    <string name="reader_note_cancel">Cancel</string>
+
+    <!-- Export (DATA-01) -->
+    <string name="reader_export_title">Export annotations</string>
+    <string name="reader_export_choose">Choose export format</string>
+    <string name="reader_export_success">Exported %1$d items (%2$s)</string>
+
+    <!-- Selection menu (READ-07, ReaderFragment ActionMode) -->
+    <string name="reader_menu_highlight">Highlight</string>
+    <string name="reader_menu_copy">Copy</string>
+    <string name="reader_menu_share">Share</string>
+    <string name="reader_copied">Copied</string>
+    <string name="reader_share_chooser">Share selected text</string>
+
+    <!-- Typography & display (TYPE-01/02/03) -->
+    <string name="typography_font_size">Font size</string>
+    <string name="typography_line_height">Line height</string>
+    <string name="typography_paragraph_spacing">Paragraph spacing</string>
+    <string name="typography_page_margins">Page margins</string>
+    <string name="typography_align">Alignment</string>
+    <string name="typography_align_justify">Justified</string>
+    <string name="typography_align_start">Left aligned</string>
+    <string name="typography_font">Font</string>
+    <string name="typography_font_default">Default</string>
+    <string name="typography_font_serif">Serif</string>
+    <string name="typography_font_sans">Sans-serif</string>
+    <string name="typography_paging">Paging</string>
+    <string name="typography_paging_paginated">Paginated</string>
+    <string name="typography_paging_scroll">Scroll</string>
+    <string name="typography_volume_key">Volume key paging</string>
+    <string name="typography_theme">Theme</string>
+    <string name="typography_theme_light">Light</string>
+    <string name="typography_theme_sepia">Sepia</string>
+    <string name="typography_theme_dark">Dark</string>
+    <string name="typography_display">Display</string>
+    <string name="typography_brightness">Brightness</string>
+    <string name="typography_keep_screen_on">Keep screen on</string>
+    <string name="typography_orientation">Orientation</string>
+    <string name="typography_orientation_portrait">Portrait</string>
+    <string name="typography_orientation_landscape">Landscape</string>
+
+    <!-- Highlight colors (shared: export label + color-dot a11y) -->
+    <string name="color_yellow">Yellow</string>
+    <string name="color_green">Green</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_pink">Pink</string>
+
+    <!-- Import (IMP) -->
+    <string name="import_success">Import successful</string>
+    <string name="import_already_exists">Already in library</string>
+    <string name="import_failed">Import failed: %1$s</string>
+    <string name="import_sample_failed">Sample import failed: %1$s</string>
+    <string name="import_parse_failed">Unable to parse book</string>
+    <string name="import_db_failed">Database write failed: %1$s</string>
+
+    <!-- Errors (user-readable) -->
+    <string name="error_book_not_found">Book not found</string>
+    <string name="error_book_missing">Book not found: %1$s</string>
+    <string name="error_export_empty">No bookmarks, highlights, or notes to export</string>
+    <string name="error_export_write">Write failed: %1$s</string>
+    <string name="error_export_write_unknown">Write failed: unknown error</string>
+    <string name="error_search">Search failed, please try another keyword</string>
+    <string name="error_open_file">Cannot open the selected file: %1$s</string>
+    <string name="error_open_dest">Cannot open target location</string>
+
+    <!-- Export Markdown human-readable labels (DATA-01) -->
+    <string name="export_md_title"># Annotations: %1$s</string>
+    <string name="export_md_author">- Author: %1$s</string>
+    <string name="export_md_format">- Format: %1$s</string>
+    <string name="export_md_exported_at">- Exported: %1$s</string>
+    <string name="export_md_progress">## Reading progress</string>
+    <string name="export_md_progress_unknown">Unknown</string>
+    <string name="export_md_bookmarks">## Bookmarks (%1$d)</string>
+    <string name="export_md_annotations">## Highlights &amp; notes (%1$d)</string>
+
+    <!-- Relative time (library "last read") -->
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_ago">%1$d minutes ago</string>
+    <string name="time_hours_ago">%1$d hours ago</string>
+    <string name="time_yesterday">yesterday</string>
+    <string name="time_days_ago">%1$d days ago</string>
+</resources>
