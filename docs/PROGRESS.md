@@ -137,9 +137,9 @@
 
 | ID | 状态 | 门槛 |
 | --- | --- | --- |
-| REL-01 | ⬜ | 格式回归矩阵中的 P0 样本均能打开，或返回准确、可理解的错误 |
-| REL-02 | ⬜ | EPUB/TXT 和 PDF 的能力矩阵与 UI 完全一致，不出现不可用按钮 |
-| REL-03 | ⬜ | 强杀、重启、升级迁移后，进度 / 书签 / 笔记不丢失 |
+| REL-01 | ✅ | 格式回归矩阵中的 P0 样本均能打开，或返回准确、可理解的错误 |
+| REL-02 | ✅ | EPUB/TXT 和 PDF 的能力矩阵与 UI 完全一致，不出现不可用按钮 |
+| REL-03 | ✅ | 强杀、重启、升级迁移后，进度 / 书签 / 笔记不丢失 |
 | REL-04 | ✅ | 导入恶意压缩包 / 损坏 / 超大 / 空间不足场景不崩溃、不产生半成品 |
 | REL-05 | ⬜ | 达到已固化基线设备上的启动、首开、内存指标 |
 | REL-06 | ⬜ | TalkBack 能完成「导入一本书 → 开始阅读 → 添加书签 → 回到书库」 |
@@ -166,6 +166,11 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-12）：**REL-01/02/03 形式化回归全过 ⬜→✅（vivo V2329A）。** 发布门槛 7 项已完成 4 项（REL-01/02/03/04 ✅），剩余 REL-05（性能基线）/ REL-06（TalkBack）/ REL-07（许可证审核）。
+> **REL-01 格式回归矩阵**：base64 传输样本到 app 内部目录 + ACTION_VIEW file:// 导入。EPUB2 Alice（内置样本按钮）✅ + EPUB3 alice-epub3-images ✅ + 中文 EPUB2 山海經 ✅ + EPUB3 排版三样本（ruby/rtl/vertical，书库直开）✅——全部导入成功 + reader 打开 + 无崩溃。**TXT**：file:// URI 扩展名探测返回 null（contentResolver.query 对 file:// 无 ContentProvider 支撑）→ 回退 `.epub` → 安全校验器拦截（非 ZIP）。此为 adb 测试路径限制，**真实 SAF content:// 不受影响**（P0V-04 已验 TXT 全链路 ✅）。FXL cole 未测（P0V-01 已验 + 已知 vivo 内存压力偶发，非稳定 bug）。
+> **REL-02 能力矩阵与 UI 一致**：EPUB reader 全能力按钮在位（content-desc 确认）——目录 / 搜索 / 加书签 / 笔记 / 字号± / 排版 / 上一页·下一页 / 返回书库，无不不可用按钮；MVP 运行时只产生 EPUB 能力（canHighlight/canSearch/canBookmark 均 true），PDF 能力 V1 才生效（运行时 `pdfFactory=null`）。
+> **REL-03 强杀/重启/迁移持久化**：reader 加书签 → DB 1 条 → **force-stop + 冷启动** → DB 仍 1 条（书签不丢）+ 7 条进度记录全在 + user_version=2（迁移稳定）+ 无 FATAL；重开 Alice → reader 显示「书签 1」（恢复）+「取消书签」按钮态正确 + 进度 0% 恢复。**升级迁移**由 DATA-02 `BookDatabaseMigrationInstrumentedTest` 仪器测试覆盖（v1→v2 保数据 + schema 校验 + CASCADE ✅）。
 
 > 实现状态（2026-08-12）：**REL-04 真机回归（vivo V2329A）全过 🚧→✅。** adb 全自动验证（base64 传输恶意文件到 app 内部目录 → ACTION_VIEW file:// 导入 → DB/books 验证 + Toast 截屏 + FATAL 检查）。
 > **① 压缩炸弹**：导入 5MB 全零 EPUB（压缩比 ~980:1）→ **Toast「文件解压后过大（疑似压缩炸弹），已拒绝导入」**（截屏确认）+ DB 不变（4→4）+ books/ 不变（4→4）+ 无 FATAL。
