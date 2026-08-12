@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.BookFileImporter
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.EpubSecurityValidator
 import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.data.ReadingProgressRepository
@@ -71,12 +72,17 @@ object DatabaseModule {
 
     @Provides
     @Singleton
+    fun provideEpubSecurityValidator(): EpubSecurityValidator = EpubSecurityValidator()
+
+    @Provides
+    @Singleton
     fun provideImportBookUseCase(
         importer: BookFileImporter,
         extractor: ExtractPublicationMetadataUseCase,
         repo: BookRepository,
+        securityValidator: EpubSecurityValidator,
         @ApplicationContext context: Context,
-    ): ImportBookUseCase = ImportBookUseCase(importer, extractor, repo, context)
+    ): ImportBookUseCase = ImportBookUseCase(importer, extractor, repo, securityValidator, context)
 
     @Provides
     @Singleton

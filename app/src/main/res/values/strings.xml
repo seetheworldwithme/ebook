@@ -153,6 +153,15 @@
     <string name="import_sample_failed">样本导入失败：%1$s</string>
     <string name="import_parse_failed">无法解析书籍</string>
     <string name="import_db_failed">写入数据库失败：%1$s</string>
+    <!-- 导入安全（REL-04） -->
+    <string name="import_error_file_too_large">文件过大（%1$dMB），超过导入上限</string>
+    <string name="import_error_zip_slip">文件包含恶意路径，已拒绝导入</string>
+    <string name="import_error_compression_bomb">文件解压后过大（疑似压缩炸弹），已拒绝导入</string>
+    <string name="import_error_total_size">解压后内容过大，已拒绝导入</string>
+    <string name="import_error_entry_too_large">文件中单个条目过大，已拒绝导入</string>
+    <string name="import_error_too_many_entries">文件包含过多条目，已拒绝导入</string>
+    <string name="import_error_corrupt">文件已损坏或格式不正确，无法导入</string>
+    <string name="import_error_insufficient_space">存储空间不足，请清理后重试</string>
 
     <!-- 错误（用户可读提示） -->
     <string name="error_book_not_found">书籍不存在</string>

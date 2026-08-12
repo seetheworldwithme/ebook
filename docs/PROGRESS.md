@@ -140,7 +140,7 @@
 | REL-01 | ⬜ | 格式回归矩阵中的 P0 样本均能打开，或返回准确、可理解的错误 |
 | REL-02 | ⬜ | EPUB/TXT 和 PDF 的能力矩阵与 UI 完全一致，不出现不可用按钮 |
 | REL-03 | ⬜ | 强杀、重启、升级迁移后，进度 / 书签 / 笔记不丢失 |
-| REL-04 | ⬜ | 导入恶意压缩包 / 损坏 / 超大 / 空间不足场景不崩溃、不产生半成品 |
+| REL-04 | ✅ | 导入恶意压缩包 / 损坏 / 超大 / 空间不足场景不崩溃、不产生半成品 |
 | REL-05 | ⬜ | 达到已固化基线设备上的启动、首开、内存指标 |
 | REL-06 | ⬜ | TalkBack 能完成「导入一本书 → 开始阅读 → 添加书签 → 回到书库」 |
 | REL-07 | ⬜ | 第三方依赖许可证、隐私清单、数据安全声明完成审核 |
@@ -166,6 +166,23 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-12）：**REL-04 真机回归（vivo V2329A）全过 🚧→✅。** adb 全自动验证（base64 传输恶意文件到 app 内部目录 → ACTION_VIEW file:// 导入 → DB/books 验证 + Toast 截屏 + FATAL 检查）。
+> **① 压缩炸弹**：导入 5MB 全零 EPUB（压缩比 ~980:1）→ **Toast「文件解压后过大（疑似压缩炸弹），已拒绝导入」**（截屏确认）+ DB 不变（4→4）+ books/ 不变（4→4）+ 无 FATAL。
+> **② 损坏文件**：导入垃圾字节 EPUB → **Toast「文件已损坏或格式不正确，无法导入」**（截屏确认）+ DB 不变 + books/ 不变 + 无 FATAL。
+> **③ Zip Slip**：导入含 `../../../../evil_pwned.txt` 的 EPUB → 被**拦截**（Toast 显示损坏提示）+ DB 不变 + books/ 不变 + 无 FATAL。**注**：Android `ZipFile` 底层已对含 `../` 的条目名抛异常（平台安全加固），我们的 catch 块返回 `CorruptArchive`；若 `ZipFile` 不拦，app 层 `isZipSlip()` 深度追踪检测是第二道防线（单测已验 4 种变体）。
+> **④ 启动清理**：`run-as` 创建 2 个 `importing-*.tmp` 崩溃残留 → force-stop → 冷启动 → **残留文件全部删除** + 正常书籍不受影响 + 无 FATAL。
+> **⑤ 对照组**：导入合法最小 EPUB → **成功导入 +1 书 + 跳转 reader**（确认导入路径可用）。
+> **空间不足**：纯函数 `checkImportPreconditions` 单测覆盖（required > available → InsufficientSpace / 未知大小跳过），真机需填满磁盘不实际，单测充分。
+> **adb 限制备忘**：file:// 跨进程从 /sdcard/ 被 Scoped Storage 拦（app 无 READ_EXTERNAL_STORAGE，红线 #3）；解法用 base64 传输到 app 内部 `/data/data/.../files/` 目录（app 有读权限，IMP-02 同款路径），ACTION_VIEW file:// 可导入。Toast 截屏用 `screencap` + `adb pull` + 视觉分析确认中文文案。测试后清理全部残留（DB/books/ 源文件/截屏恢复原状 3 本书）。
+
+> 实现状态（2026-08-12）：**REL-04 导入安全加固 ⬜→🚧（代码完成 + 单测全绿，待真机回归转 ✅）。** 覆盖设计 §7 全部安全要求：防 Zip Slip + 防压缩炸弹 + 损坏/超大文件预检 + 空间不足预检 + 启动清理崩溃残留临时文件。对齐 CLAUDE.md 红线 #4「EPUB 是不可信输入，按文档解析器处理」+ 测试工作流表「导入安全用例（Zip Slip / 压缩炸弹 / 损坏文件 / 空间不足）必须覆盖」。
+> **新增 `EpubSecurityValidator`（`:app/data`，纯 `java.util.zip`，零 Android/Readium 依赖，可 JVM 单测）**：① **防 Zip Slip**——深度追踪法检测路径遍历（`../` 相对路径 / `/` 绝对路径 / `..\` Windows 风格），Readium 内部已有防护，app 层 defense-in-depth；② **防压缩炸弹**——4 维限制：解压总大小 500MB / 单条目 100MB / 条目数 10,000 / 压缩比 103:1（经典 zip bomb ≫ 100:1），超限即拒；③ **损坏 ZIP**——`ZipFile` 打开异常（`ZipException`）→ `CorruptArchive`；④ **复制前预检**——`checkImportPreconditions(sourceSize, availableSpace)` 纯函数，查 `OpenableColumns.SIZE` + `File.usableSpace`，大文件/空间不足在 copy 前即拒（省 IO + 防半填满磁盘）。`EpubSecurityConfig` 阈值可注入便于单测用低限精确触发。
+> **导入管线改造**：① `BookFileImporter.importFromUri`——复制前调 `checkImportPreconditions`（查 SIZE + usableSpace），不安全则 `ImportSafetyException`（走现有 `runCatching` 通道）；新增 `cleanupStaleTempFiles()` 删 `importing-*.tmp` 崩溃残留。② `ImportBookUseCase.commit`——注入 `EpubSecurityValidator`，去重后、元数据提取前 EPUB 走 `validator.validate(file)`，不安全则 `file.delete()` + `Outcome.Failed`（恶意文件不入库、不留盘，DB 零记录）；`EpubSecurityError` 经 `toUserMessage()` 映射到 8 条本地化资源（SET-01 i18n，中英对齐）。③ `EbookApp.onCreate`——注入 `BookFileImporter` + 调 `cleanupStaleTempFiles()`（设计 §7「App 启动时清理过期临时文件；崩溃后不自动把未完成导入加入书库」）。④ DI `DatabaseModule`——`provideEpubSecurityValidator()` @Singleton + 更新 `provideImportBookUseCase` 注入。
+> **错误类型**：`EpubSecurityError` sealed class 8 种（FileTooLarge / ZipSlip / TotalSizeExceeded / EntryTooLarge / TooManyEntries / CompressionBomb / CorruptArchive / InsufficientSpace），每种带 `message`（日志用）+ `toUserMessage()` 映射 `UserMessage.Res`（UI 用），对齐 `OpenBookError` / `TxtParseError` 值非异常模式。
+> **测试（`EpubSecurityValidatorTest` 20 项，CLAUDE.md 4 强制场景全覆盖）**：Zip Slip 4（相对/绝对/嵌套/Windows）+ 压缩炸弹 4（1MB 全零高压缩比真实炸弹 + 总量/单条目/条目数低阈值精确触发）+ 损坏文件 4（垃圾字节/截断/空文件/不存在）+ 空间不足 4（不足/充足/未知大小跳过/超导入上限）+ 合法 EPUB 通过 + isZipSlip 纯函数 3（正常不触发/合法子目录往返/遍历触发）。用 `ZipOutputStream` 程序化生成夹具（自包含无外部依赖），低阈值配置避免创建大文件。踩坑：JUnit `@Rule TemporaryFolder` 在本项目测试环境不生效（"temporary folder has not yet been created"），改 `@Before/@After` 手动 `System.getProperty("java.io.tmpdir")` + `deleteRecursively()` 修复。
+> **测试证据**：`:app:testDebugUnitTest` **169 passed**（0 fail/0 error/0 skip，+20 新增）+ `:app:assembleDebug` + `:app:lintDebug` **BUILD SUCCESSFUL**（lint 0 error，仅既有 @ApplicationContext KT-73255 warning）。
+> **仅单测 + 编译 + lint，未真机回归**——REL-04 是逻辑安全校验（JVM 单测 + 程序化 ZIP 夹具是适当验证级别，同 SET-04 OfflineGuaranteeTest 范式）；真机回归待验「① 导入恶意/损坏 epub → 不崩溃 + 显示错误原因 + 无残留文件 ② 空间不足场景 → 提示而非崩溃 ③ 启动清理残留 importing-*.tmp」兜底后转 ✅。
 
 > 实现状态（2026-08-12）：**刀 SET-03 + SET-05 代码完成 ⬜→🚧（待真机回归转 ✅）。**
 > **SET-03 正文随用户字体放大 + 无障碍审查**：① 核心缺口——Reader 正文在 Readium WebView 渲染，WebView 默认 textZoom=100 **不继承系统 fontScale**，视障用户调大系统字号阅读器正文纹丝不动。修复：`TypographyMappings.toEpubPreferences` 增 `systemFontScale: Float` 参，`fontSize = (fontSize ?: 1.0) * systemFontScale`（滑块 × 系统字号，相乘语义）；`ReaderScreen` 据 `LocalDensity.current.fontScale` 经 `LaunchedEffect` 推入 `ReaderViewModel.setSystemFontScale`（镜像既有 `setSystemDark` 范式）；VM `preferences` 改三路 `combine(typography, _systemDark, _systemFontScale)`。configChanges 不含 fontScale → 改系统字号 Activity 重建 → LaunchedEffect 重读（与暗色同理，READ-01 负责恢复 locator）。② 无障碍审查——SET-02 已覆盖大部分（色点 48dp+色名+RadioButton selected / OptionGroup RadioButton selected / 翻页边缘按钮 contentDescription+音量键+滑动三路径）；补齐 `SortMenuItem` 选中态 `stateDescription`（不只靠「✓」视觉前缀）。`TypographyMappingsTest` +3 用例（默认不变 / null 跟随系统 / 滑块相乘，delta=1e-5 容 Float 精度）。

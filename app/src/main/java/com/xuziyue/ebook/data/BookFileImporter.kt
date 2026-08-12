@@ -32,6 +32,12 @@ class BookFileImporter(private val context: Context) {
     suspend fun importFromUri(uri: Uri): Result<ImportedBook> = withContext(Dispatchers.IO) {
         runCatching {
             val ext = extensionOf(uri) ?: "epub"
+            // REL-04 安全校验：复制前预检文件大小 + 磁盘空间，避免先拷大文件再拒绝。
+            val sourceSize = querySize(uri)
+            val precheck = EpubSecurityValidator.checkImportPreconditions(sourceSize, booksDir.usableSpace)
+            if (precheck is EpubSecurityResult.Unsafe) {
+                throw ImportSafetyException(precheck.error)
+            }
             val (hash, file) = copyWithHash({
                 context.contentResolver.openInputStream(uri)
                     ?: throw java.io.IOException(context.getString(R.string.error_open_file, uri))
@@ -57,6 +63,31 @@ class BookFileImporter(private val context: Context) {
         } ?: return null
         val dot = name.lastIndexOf('.')
         return if (dot in 0 until name.length - 1) name.substring(dot + 1).lowercase() else null
+    }
+
+    /** 从 SAF Uri 查询文件大小（字节）；查询失败返回 -1（跳过预检）。 */
+    private fun querySize(uri: Uri): Long {
+        return try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(OpenableColumns.SIZE)
+                    if (idx >= 0 && !c.isNull(idx)) c.getLong(idx) else -1L
+                } else -1L
+            } ?: -1L
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
+    /**
+     * 清理崩溃残留的临时文件（设计 §7：App 启动时清理过期临时文件）。
+     *
+     * 正常导入流程在失败时已自清（[copyWithHash] catch 删 tmp），
+     * 但崩溃 / kill 可能残留 `importing-*.tmp`，需在启动时兜底清理。
+     */
+    fun cleanupStaleTempFiles() {
+        booksDir.listFiles { f -> f.name.startsWith("importing-") && f.name.endsWith(".tmp") }
+            ?.forEach { it.delete() }
     }
 
     /**

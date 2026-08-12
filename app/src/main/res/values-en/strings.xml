@@ -153,6 +153,15 @@
     <string name="import_sample_failed">Sample import failed: %1$s</string>
     <string name="import_parse_failed">Unable to parse book</string>
     <string name="import_db_failed">Database write failed: %1$s</string>
+    <!-- Import safety (REL-04) -->
+    <string name="import_error_file_too_large">File too large (%1$dMB), exceeds import limit</string>
+    <string name="import_error_zip_slip">File contains malicious path, import rejected</string>
+    <string name="import_error_compression_bomb">Decompressed content too large (possible zip bomb), import rejected</string>
+    <string name="import_error_total_size">Decompressed content too large, import rejected</string>
+    <string name="import_error_entry_too_large">A single entry is too large, import rejected</string>
+    <string name="import_error_too_many_entries">File contains too many entries, import rejected</string>
+    <string name="import_error_corrupt">File is corrupted or invalid, cannot import</string>
+    <string name="import_error_insufficient_space">Insufficient storage space, please free up space and retry</string>
 
     <!-- Errors (user-readable) -->
     <string name="error_book_not_found">Book not found</string>
