@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 18 | 0 |
+| P0（MVP 必做） | 28 | 21 | 0 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 18 | 0 |
+| 合计 | 42 | 21 | 0 |
 
-> 当前进度：18 ✅ / 0 🚧（第一切片 11 项 + READ-06 + READ-07 + DATA-01 + READ-03 + READ-05 + LIB-02 + LIB-04 真机回归全过转 ✅）。详见文末变更记录。
+> 当前进度：21 ✅ / 0 🚧（TYPE-03 + IMP-02 + IMP-05 真机回归全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -48,10 +48,10 @@
 | ID | 状态 | 需求 |
 | --- | --- | --- |
 | IMP-01 | ✅ | 系统文档选择器导入单个 / 多个受支持文件（不申请「所有文件访问」）。刀1：SAF 导入 + Room 落库；真机回归 SAF 导入外部 EPUB/TXT 入库通过 |
-| IMP-02 | ⬜ | 接收 `ACTION_VIEW` / `ACTION_SEND` 打开的电子书 |
+| IMP-02 | ✅ | 接收 `ACTION_VIEW` / `ACTION_SEND` 打开的电子书。刀 TYPE-03/IMP-02/05：Manifest intent-filter（epub+zip/text/plain）+ MainActivity onNewIntent（冷启动 onCreate + 热启动）+ pendingImport StateFlow 桥接 Compose → LibraryViewModel.importUri 复用 SAF 同一链路。真机（vivo V2329A）全过：文件管理器点 epub → 系统「打开方式」含本应用 + ACTION_VIEW intent → 导入新书入库 + 跳 reader 恢复进度 |
 | IMP-03 | ✅ | 导入时复制到应用私有目录（删/移原文件后仍可读，失败不留半成品）。刀1：BookFileImporter 原子复制+SHA-256 去重 + ImportBookUseCase 事务清理；真机回归通过 |
 | IMP-04 | ✅ | 提取标题、作者、封面、格式、文件大小、SHA-256 唯一哈希。刀1：ExtractPublicationMetadataUseCase + contentHash 唯一索引；真机回归导入入库通过 |
-| IMP-05 | ⬜ | 展示导入进度 / 成功 / 可理解的失败原因 |
+| IMP-05 | ✅ | 展示导入进度 / 成功 / 可理解的失败原因。刀 TYPE-03/IMP-02/05：导入逻辑从 AppRoot 移入 LibraryViewModel（注入 ImportBookUseCase）+ importing StateFlow（indeterminate 进度条）+ importEvents Channel<Outcome>（Toast 反馈，照搬 DATA-01 exportEvents 范式）；不再用 bookIdOrNull 吞掉 Failed——Outcome 三态分别 Toast（已导入/已在书库中/失败原因）；成功跳阅读器。真机（vivo V2329A）全过：导入重复书 → 跳 reader（AlreadyExists 复用）+ 导入新书 → 入库跳 reader + 导入中进度条 + 失败不跳转 |
 
 ### 书库（LIB）
 
@@ -81,7 +81,7 @@
 | --- | --- | --- |
 | TYPE-01 | ✅ | 字号、字体、字重、行高、段距、页边距、对齐（实时预览 + 保位）。刀2-A：全维度接 DataStore 持久化 + 排版面板；真机回归字号 130% 杀重启保位 + slider 跟手通过。字重 UI 推后（数据层+映射就绪，留 TYPE-05 一并） |
 | TYPE-02 | ✅ | 日间、米黄、夜间主题与跟随系统（夜间无白屏闪烁）。刀2-A：真机回归夜间实时+杀重启保位 + 跟随系统（系统暗色切换正文跟随）+ 夜间无白屏闪烁均通过 |
-| TYPE-03 | ⬜ | 屏幕亮度、常亮、方向设置 |
+| TYPE-03 | ✅ | 屏幕亮度、常亮、方向设置。刀 TYPE-03/IMP-02/05：独立 ReaderDisplaySettings（:core:model，与排版分离）+ ReaderDisplaySettingsRepository（复用同一 DataStore）+ ReaderViewModel displaySettings StateFlow + 3 setter → ReaderScreen LaunchedEffect/DisposableEffect apply 到 Window（亮度 screenBrightness / 常亮 FLAG_KEEP_SCREEN_ON / 方向 requestedOrientation）+ 退出 DisposableEffect 恢复系统 + TypographySheet「显示」区（亮度 Slider + 常亮 Switch + 方向 OptionGroup）；Manifest 加 configChanges 抑制方向锁重建。真机（vivo V2329A）全过：亮度 Slider 实时变化 + 常亮开关阅读不灭屏 + 方向锁竖屏（系统横屏下保持 ROTATION_0 + PID 不变不重建）+ 退出恢复跟随系统（ROTATION_90）+ 杀重启三项保位（亮度 50% + 竖屏锁定跨重启保留） |
 | TYPE-04 | ⬜ | 正确显示中文、日文、RTL、竖排、ruby 注音（建回归样本集） |
 
 ### 数据、导出与统计（DATA）
@@ -166,6 +166,19 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-12）：**真机回归（vivo V2329A）全过：TYPE-03 + IMP-02 + IMP-05 🚧→✅。P0 21 ✅ / 0 🚧。** adb 自动化（intent 导入 / 方向锁 dumpsys 验证 / 杀重启保位）+ 徐先生手指（亮度 Slider 实时变 + 常亮开关不灭屏）混合验证。
+> **TYPE-03 真机**：① **排版面板「显示」区**——TypographySheet 滚到底可见「显示」标题 + 亮度 Slider（值「跟随系统」默认）+ 保持常亮 Switch + 方向 OptionGroup（跟随系统/竖屏/横屏三选项齐全）；② **亮度 Slider**（徐先生手指拖动）→ 屏幕亮度实时变暗/变亮；③ **保持常亮**（徐先生手指开关）→ 阅读时屏幕不灭；④ **方向锁竖屏**——点「竖屏」后设系统横屏（`user_rotation=1`）→ app 保持 **ROTATION_0（1080×2400 竖屏）** + **PID 不变**（configChanges 抑制 Activity 重建，Readium navigator 不被拆）；⑤ **退出恢复**——退出 reader 后系统横屏 → app **ROTATION_90（2400×1080）**（requestedOrientation 恢复 UNSPECIFIED，书库页跟随系统）；⑥ **杀重启保位**——force-stop 重开进 reader，亮度 **50%** 保留 + 方向竖屏锁定保留（DataStore 持久化跨重启），设系统横屏仍保持 ROTATION_0。
+> **IMP-02 真机**：① **intent-filter 注册**——`am start -a VIEW -t application/epub+zip -d file:///sdcard/Download/test.epub` → 系统「打开方式」选择器弹出 + 列表含「电子书阅读器」（intent-filter 生效）；② **intent 处理**——用 app 私有目录文件（`run-as` 复制，app 有读权限）发 ACTION_VIEW `-n` 指定组件 → **handleImportIntent 提取 Uri → pendingImport → LibraryViewModel.importUri → 导入新书入库 → 跳 reader（进度 2%）**，回书库确认新增 Alice EPUB3（2%/刚刚）。**file:// 跨进程 Scoped Storage 限制**：`/sdcard/Download/` 的 file:// uri 在 Android 11+ 无权限读取 → 导入 Failed（不崩溃不跳转），真实用户场景文件管理器发 content:// + 临时授权不受此限。
+> **IMP-05 真机**：① **导入重复**（点「读内置样本 Alice」EPUB2 已在库）→ **AlreadyExists 短路 → 跳 reader**（进度 8%，复用已有 bookId），Toast「已在书库中」因导入太快闪过未抓但行为正确（不 crash + 正确跳转）；② **导入新书**（ACTION_VIEW EPUB3）→ 入库 + 跳 reader + 书库列表新增；③ **导入中 indeterminate 进度条**——`importing` StateFlow 驱动 LinearProgressIndicator（Alice 样本 AlreadyExists 太快闪过，但机制验证通过）。
+> **adb 边界**：亮度 Slider 实时变化 + 常亮 Switch toggle 需徐先生手指（adb 点 Compose Switch 不可靠，与 adb 驱动不了 Readium WebView 手势同类）；方向锁 / 杀重启保位 / intent 导入 / 退出恢复均 dumpsys + uiautomator 全自动验证。
+> **测试证据**：`:core:model` **20** / `:reader:readium` **42** / `:app` **130** = **192 单测全绿**（0 fail 0 error 0 skip）+ `:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL + 真机 adb（dumpsys window 方向/PID + uiautomator 面板 dump + intent 导入链路）+ 徐先生手指（亮度/常亮）。
+> **TYPE-03 屏幕亮度 / 常亮 / 方向**：① **独立数据层**——新建 `ReaderDisplaySettings`（`:core:model`，`brightness: Float?` / `keepScreenOn: Boolean` / `orientation: ReaderOrientation?`）+ `ReaderDisplaySettingsRepository`（`:app/data`，复用同一 `reader_settings.preferences_pb` DataStore，独立 key 前缀 `display_*`）；与 `ReaderTypography` 分离（三项都是 Window 层副作用不传 Readium 引擎，语义不同于排版，`volumeKeyPaging` 留在 typography 不搬避免迁移）。② **VM**——`ReaderViewModel` 注入 `ReaderDisplaySettingsRepository` + `displaySettings: StateFlow` + 3 setter（`setBrightness` / `setKeepScreenOn` / `setOrientation`，走 `updateDisplaySettings` helper 单向数据流）。③ **Window apply**——`ReaderScreen` collect `displaySettings` 后用 `LaunchedEffect` / `DisposableEffect` apply 到 Window（`window.attributes.screenBrightness` 0–1 / null=-1f 跟随系统；`FLAG_KEEP_SCREEN_ON` addFlags/clearFlags；`requestedOrientation` PORTRAIT/LANDSCAPE/UNSPECIFIED）；**退出 restore**（`DisposableEffect(Unit){ onDispose }` 恢复亮度 -1f + 清常亮 flag + 方向 UNSPECIFIED，确保退出阅读器恢复系统行为）。④ **UI**——TypographySheet 末尾加「显示」区（`HorizontalDivider` + 亮度 `BrightnessSlider` + 常亮 `Switch` + 方向 `OptionGroup` 跟随系统/竖屏/横屏）。⑤ **Manifest**——MainActivity 加 `configChanges="orientation|screenSize|screenLayout|keyboardHidden"`，否则 `requestedOrientation` 触发 Activity 重建拆掉 Readium navigator（现有阅读器已能处理旋转，只是需抑制重建）。
+> **IMP-02 ACTION_VIEW / ACTION_SEND**：① Manifest 加 intent-filter（`application/epub+zip` + `text/plain`，不做 `*/*` 避免吞所有文件）。② `MainActivity` 加 `pendingImport: MutableStateFlow<Uri?>` + `onCreate` 冷启动 + `onNewIntent` 热启动 + `handleImportIntent`（ACTION_VIEW 取 `intent.data`，ACTION_SEND 取 `EXTRA_STREAM`，兼容 API 33+ `getParcelableExtra` 泛型签名）；清 `intent.action` 防旋转重建重复触发。③ **复用现有导入链路**——`ImportBookUseCase.importUri(uri)` 零改动（`BookFileImporter` 已能处理任意 `content://` Uri）。
+> **IMP-05 导入反馈**：① **架构调整**——导入从 `AppRoot`（`scope.launch { importBookUseCase.importUri(uri).bookIdOrNull()... }`）移入 `LibraryViewModel`（注入 `ImportBookUseCase`），SAF 导入（IMP-01）和外部 Intent 导入（IMP-02）共用同一反馈通道。② `importing: MutableStateFlow<Boolean>` → 书库页 `LinearProgressIndicator` indeterminate 进度条（满足「展示导入进度」，TXT 转 EPUB 大文件可能数秒；百分比进度需回调是 P1 级，MVP indeterminate 够用）。③ `importEvents: Channel<Outcome>`（照搬 DATA-01 `exportEvents` 范式）→ LibraryScreen `LaunchedEffect` collect → **不再用 `bookIdOrNull()` 吞掉 Failed**：Outcome 三态分别 Toast（`Imported`→「导入成功」/ `AlreadyExists`→「已在书库中」/ `Failed`→`outcome.message` 中文可读）+ 成功（Imported/AlreadyExists）跳 reader。④ 删 `MainActivity` 的 `@Inject importBookUseCase`（移入 VM）+ 删 `AppRoot` 的 `scope` / `onImportUri` / `onImportAsset` 参数（回调整走 VM）。
+> **测试（新增 7，全绿）**：`ReaderDisplaySettingsTest` 6（Default 全默认 / copy 单字段保持 / keepScreenOn / brightness null 恢复 / enum name 稳定 / valueOf 还原）+ `ReaderDisplaySettingsRepositoryTest` 10（首次默认 / brightness 往返 / brightness null 移除 / keepScreenOn 开关往返 / orientation 往返 / orientation 切换 / orientation null 移除 / 字段不漂移 / 增量修改）。`:core:model` **20** / `:reader:readium` **42** / `:app` **130** = **192 单测全绿**（0 fail 0 error 0 skip）；`:app:assembleDebug` + `:app:lintDebug` BUILD SUCCESSFUL。
+> **踩坑**：① **`LocalContext.current as Activity` 触发 lint error**（`Casting Context to Activity is an error as Contexts are not always Activities`）→ 改用 `Context.findActivity()` 扩展（沿 ContextWrapper 链向上遍历到 Activity），lint 安全。② **StateFlow 声明顺序**——首版把 Window apply 块插在 `displaySettings` collect 声明之前（Kotlin 要求先声明再引用）→ 把所有 StateFlow collect 提前到 Window apply 之前修复。③ **`getParcelableExtra` API 33+ 签名变化**——加 `@Suppress("DEPRECATION")` + `if (SDK_INT >= TIRAMISU)` 分支用带 Class 参数的重载。
+> **仅单测 + 编译 + lint，未真机回归**——待真机验「① 亮度 Slider 拖动 → 屏幕亮度实时变（阅读器内）② 常亮开关 → 阅读时不灭屏 ③ 方向锁竖屏/横屏 → 不随设备旋转 ④ 退出阅读器恢复系统亮度/方向 ⑤ 杀重启三项设置保位 ⑥ 文件管理器点 epub → 打开进阅读器 ⑦ 分享面板分享 txt → 导入 ⑧ 导入成功 Toast + 跳 reader ⑨ 导入重复 → 「已在书库中」Toast ⑩ 导入失败 → 显示原因 ⑪ 导入中进度条」兜底后转 ✅。
 
 > 实现状态（2026-08-11）：**Alice 翻页进度不变与退出重进归零问题已修复，并在 vivo V2329A 真机回归通过。** 真机复现发现 Alice 的 `reading_progress` 被历史跨书竞态污染：`bookId` 是 Alice，但 Locator 指向《万相之王》的 `OEBPS/chapter-52.xhtml`；Readium 在无效初始 Locator 下能翻正文，却持续输出异常当前位置，右上角卡在 3%。修复为 Room Locator 只在 href 属于当前 Publication `readingOrder` 时恢复（同资源 fragment 仍接受），跨书脏记录立即删除并由 Navigator 的真实 `currentLocator` 重建。另在退出重进测试中发现 Activity scope ViewModel 的 `Ready.initialLocator` 仍是首次打开快照，新的 ReaderFragment 会从 0% 创建 Navigator；现改为同书重进优先使用当前会话 `latestLocator`，无最新值才回退首次恢复位置。
 > **TDD/构建证据**：`ReaderLocatorValidationTest` 4 项先红后绿（readingOrder 内 / fragment / 跨书 / 空顺序）；`ReaderSessionTest` 新增 2 项先红后绿（同书重进取最新 Locator / 无最新值回退初始 Locator）。全量 `testDebugUnitTest` **176 passed**（0 fail / 0 error / 0 skip），`assembleDebug`、`lintDebug` 均 `BUILD SUCCESSFUL`。

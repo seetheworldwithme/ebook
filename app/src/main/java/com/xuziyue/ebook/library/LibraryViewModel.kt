@@ -1,18 +1,24 @@
 package com.xuziyue.ebook.library
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.model.LibraryItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /** 书库排序（LIB-03）：最近阅读 / 导入时间 / 书名。 */
 enum class LibrarySort { LAST_OPENED, IMPORTED, TITLE }
@@ -30,17 +36,21 @@ enum class LibraryViewMode { LIST, GRID }
 enum class LibraryFilter(val key: String) { RECENT("RECENT"), ALL("ALL"), FINISHED("FINISHED") }
 
 /**
- * 书库页 ViewModel（LIB-01 / LIB-02 / LIB-03）。
+ * 书库页 ViewModel（LIB-01 / LIB-02 / LIB-03 + IMP-05 导入反馈）。
  *
  * - [query]：搜索关键词（书名 / 作者，DAO LIKE）。
  * - [filter]：三入口筛选（LIB-02）；[sort] / [viewMode]：排序与视图模式。
  *   三者均**本刀内存态**，未持久化；保位后续复用 DataStore 加 key。
  * - [items]：query + filter → DAO 过滤 → 内存排序（[sortItems]），5000 条内存排序 <5ms 无压力。
+ * - [importing]：导入进行中标志（UI 显示 indeterminate 进度条，IMP-05）。
+ * - [importEvents]：一次性导入结果事件（UI collect 后 Toast + 跳阅读器，IMP-05）。
+ *   SAF 导入（IMP-01）和外部 Intent 导入（IMP-02 ACTION_VIEW/SEND）共用此通道。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repository: BookRepository,
+    private val importBookUseCase: ImportBookUseCase,
 ) : ViewModel() {
 
     val query = MutableStateFlow("")
@@ -54,6 +64,38 @@ class LibraryViewModel @Inject constructor(
             .flatMapLatest { (q, f) -> repository.observeLibraryItems(q, f.key) }
             .combine(sort) { list, s -> sortItems(list, s) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ===== 导入（IMP-01 SAF + IMP-02 外部 Intent + IMP-05 进度/成功/失败反馈）=====
+
+    /** 导入进行中标志（UI 显示 indeterminate 进度条）。 */
+    val importing = MutableStateFlow(false)
+
+    /** 一次性导入结果事件（UI collect 后 Toast 反馈 + 成功跳阅读器）。 */
+    private val _importEvents = Channel<ImportBookUseCase.Outcome>(Channel.BUFFERED)
+    val importEvents = _importEvents.receiveAsFlow()
+
+    /**
+     * 导入 SAF / 外部 Intent 的 Uri（IMP-01 + IMP-02 共用）。
+     * 导入完成后 [importEvents] emit 结果（Imported / AlreadyExists / Failed）。
+     */
+    fun importUri(uri: Uri) {
+        viewModelScope.launch {
+            importing.value = true
+            val outcome = importBookUseCase.importUri(uri)
+            importing.value = false
+            _importEvents.send(outcome)
+        }
+    }
+
+    /** 导入 assets 内置样本（IMP-01 样本按钮）。 */
+    fun importAsset(assetName: String) {
+        viewModelScope.launch {
+            importing.value = true
+            val outcome = importBookUseCase.importAsset(assetName)
+            importing.value = false
+            _importEvents.send(outcome)
+        }
+    }
 
     fun setQuery(value: String) { query.value = value }
     fun setFilter(value: LibraryFilter) { filter.value = value }

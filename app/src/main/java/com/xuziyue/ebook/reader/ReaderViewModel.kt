@@ -8,11 +8,14 @@ import androidx.lifecycle.viewModelScope
 import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.BookmarkRepository
+import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderCapabilities
+import com.xuziyue.ebook.model.ReaderDisplaySettings
+import com.xuziyue.ebook.model.ReaderOrientation
 import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
@@ -79,6 +82,7 @@ class ReaderViewModel @Inject constructor(
     private val bookRepository: BookRepository,
     private val progressRepository: ReadingProgressRepository,
     private val typographyRepository: ReaderTypographyRepository,
+    private val displaySettingsRepository: ReaderDisplaySettingsRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val annotationRepository: AnnotationRepository,
     private val exportUseCase: ExportBookDataUseCase,
@@ -98,6 +102,14 @@ class ReaderViewModel @Inject constructor(
     val volumeKeyPaging: StateFlow<Boolean> = typography
         .map { it.volumeKeyPaging }
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /**
+     * 引擎无关的显示/环境设置（TYPE-03 亮度/常亮/方向，持久化驱动）。
+     * Default 初值避免首次空窗；ReaderScreen collect 后 apply 到 Window（退出 restore）。
+     */
+    val displaySettings: StateFlow<ReaderDisplaySettings> =
+        displaySettingsRepository.observe()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderDisplaySettings.Default)
 
     /** 当前系统是否暗色（由 ReaderScreen 据 isSystemInDarkTheme 推入），用于解析 [ReaderTheme.SYSTEM]。 */
     private val _systemDark = MutableStateFlow(false)
@@ -356,6 +368,31 @@ class ReaderViewModel @Inject constructor(
      */
     private fun updateTypography(transform: (ReaderTypography) -> ReaderTypography) {
         viewModelScope.launch { typographyRepository.update(transform) }
+    }
+
+    // ===== 显示/环境设置（TYPE-03 亮度/常亮/方向，Window 层副作用，不传给 Readium 引擎）=====
+
+    /** TYPE-03：设置亮度（null = 跟随系统）。 */
+    fun setBrightness(brightness: Float?) = updateDisplaySettings {
+        it.copy(brightness = brightness?.coerceIn(0f, 1f))
+    }
+
+    /** TYPE-03：开关屏幕常亮。 */
+    fun setKeepScreenOn(enabled: Boolean) = updateDisplaySettings {
+        it.copy(keepScreenOn = enabled)
+    }
+
+    /** TYPE-03：设置方向（null = 跟随系统）。 */
+    fun setOrientation(orientation: ReaderOrientation?) = updateDisplaySettings {
+        it.copy(orientation = orientation)
+    }
+
+    /**
+     * 写入持久化层；observe 自动回流 → [displaySettings] 更新 → ReaderScreen apply 到 Window。
+     * 单向数据流（与 [updateTypography] 同范式）。
+     */
+    private fun updateDisplaySettings(transform: (ReaderDisplaySettings) -> ReaderDisplaySettings) {
+        viewModelScope.launch { displaySettingsRepository.update(transform) }
     }
 
     // ===== 高亮 / 笔记（READ-07，DB 驱动：先落盘 → observe 回流 → applyDecorations 渲染，红线 #9）=====

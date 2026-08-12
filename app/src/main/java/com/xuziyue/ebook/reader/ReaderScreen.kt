@@ -1,5 +1,9 @@
 package com.xuziyue.ebook.reader
 
+import android.app.Activity
+import android.content.Context
+import android.content.pm.ActivityInfo
+import android.view.WindowManager
 import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,6 +69,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,6 +92,8 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.model.HighlightColor
+import com.xuziyue.ebook.model.ReaderDisplaySettings
+import com.xuziyue.ebook.model.ReaderOrientation
 import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
@@ -118,12 +125,6 @@ fun ReaderScreen(
     val activity = LocalContext.current as ViewModelStoreOwner
     val viewModel: ReaderViewModel = hiltViewModel(viewModelStoreOwner = activity)
 
-    // 跟随系统主题：系统暗色变化时推入 VM，解析 ReaderTheme.SYSTEM → DARK/LIGHT。
-    val systemDark = isSystemInDarkTheme()
-    LaunchedEffect(systemDark) {
-        viewModel.setSystemDark(systemDark)
-    }
-
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val progressText by viewModel.progressText.collectAsStateWithLifecycle()
     val progression by viewModel.progression.collectAsStateWithLifecycle()
@@ -132,10 +133,55 @@ fun ReaderScreen(
     val decorations by viewModel.decorations.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val typography by viewModel.typography.collectAsStateWithLifecycle()
+    val displaySettings by viewModel.displaySettings.collectAsStateWithLifecycle()
     val isBookmarked by viewModel.isBookmarked.collectAsStateWithLifecycle()
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val annotations by viewModel.annotations.collectAsStateWithLifecycle()
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
+
+    // 跟随系统主题：系统暗色变化时推入 VM，解析 ReaderTheme.SYSTEM → DARK/LIGHT。
+    val systemDark = isSystemInDarkTheme()
+    LaunchedEffect(systemDark) {
+        viewModel.setSystemDark(systemDark)
+    }
+
+    // TYPE-03：亮度 / 常亮 / 方向应用到 Window（仅在阅读器内生效，退出恢复系统）。
+    // 用 findActivity 扩展避免 lint 报「Context 转 Activity 不安全」（Context 不一定是 Activity）。
+    val windowActivity = LocalContext.current.findActivity()
+    val window = windowActivity.window
+    // 亮度：null = 跟随系统（screenBrightness = -1f），0–1 = 手动。
+    LaunchedEffect(displaySettings.brightness) {
+        val attrs = window.attributes
+        attrs.screenBrightness = displaySettings.brightness ?: -1f
+        window.attributes = attrs
+    }
+    // 常亮：addFlags / clearFlags（FLAG 随 window 生命周期，退出 Composable 时 onDispose 清除）。
+    DisposableEffect(displaySettings.keepScreenOn) {
+        if (displaySettings.keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose { }
+    }
+    // 方向：null / SYSTEM = UNSPECIFIED，PORTRAIT / LANDSCAPE 锁定。
+    LaunchedEffect(displaySettings.orientation) {
+        windowActivity.requestedOrientation = when (displaySettings.orientation) {
+            ReaderOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            ReaderOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            null, ReaderOrientation.SYSTEM -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+    // 退出阅读器时恢复系统行为（亮度跟随系统 / 清常亮 / 方向跟随系统）。
+    DisposableEffect(Unit) {
+        onDispose {
+            val attrs = window.attributes
+            attrs.screenBrightness = -1f
+            window.attributes = attrs
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            windowActivity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
 
     // DATA-01 导出：SAF CreateDocument（MD/JSON 各一 launcher）+ 结果 Toast 反馈。
     val context = LocalContext.current
@@ -226,10 +272,12 @@ fun ReaderScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
-        // 排版面板（TYPE-01 字号/行高/段距/页边距/对齐/字体 + TYPE-02 主题含跟随系统）
+        // 排版面板（TYPE-01 字号/行高/段距/页边距/对齐/字体 + TYPE-02 主题含跟随系统
+        // + TYPE-03 亮度/常亮/方向显示设置）
         if (showTypography) {
             TypographySheet(
                 typography = typography,
+                displaySettings = displaySettings,
                 onDismiss = { showTypography = false },
                 onFontSize = { viewModel.setFontSize(it) },
                 onLineHeight = { viewModel.setLineHeight(it) },
@@ -240,6 +288,9 @@ fun ReaderScreen(
                 onFontFamily = { viewModel.setFontFamily(it) },
                 onScrollMode = { viewModel.setScrollMode(it) },
                 onVolumeKeyPaging = { viewModel.setVolumeKeyPaging(it) },
+                onBrightness = { viewModel.setBrightness(it) },
+                onKeepScreenOn = { viewModel.setKeepScreenOn(it) },
+                onOrientation = { viewModel.setOrientation(it) },
             )
         }
 
@@ -721,16 +772,18 @@ private fun SearchResultRow(item: SearchResultItem, onClick: () -> Unit) {
 }
 
 /**
- * 排版偏好面板（design.md §4.4 TYPE-01/02）。
+ * 排版与显示偏好面板（design.md §4.4 TYPE-01/02 + TYPE-03）。
  *
  * 字号/行高/段距/页边距用 Slider（松手写一次，拖动用本地 state 跟手，避免高频写 DataStore）；
  * 对齐/字体/主题用按钮组（点即生效）。主题含「跟随系统」（[ReaderTheme.SYSTEM]）。
+ * 显示设置（TYPE-03）：亮度 Slider + 常亮 Switch + 方向按钮组。
  * 所有改动经 VM → Repository 持久化，跨重启保位。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TypographySheet(
     typography: ReaderTypography,
+    displaySettings: ReaderDisplaySettings,
     onDismiss: () -> Unit,
     onFontSize: (Double) -> Unit,
     onLineHeight: (Double) -> Unit,
@@ -741,6 +794,9 @@ private fun TypographySheet(
     onFontFamily: (String?) -> Unit,
     onScrollMode: (ReaderScrollMode) -> Unit,
     onVolumeKeyPaging: (Boolean) -> Unit,
+    onBrightness: (Float?) -> Unit,
+    onKeepScreenOn: (Boolean) -> Unit,
+    onOrientation: (ReaderOrientation?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -845,7 +901,85 @@ private fun TypographySheet(
                 selected = typography.theme,
                 onSelect = onTheme,
             )
+
+            // ===== 显示设置（TYPE-03：亮度 / 常亮 / 方向，Window 层副作用）=====
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            Text(
+                "显示",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+
+            // 亮度（TYPE-03）：null = 跟随系统（显示为最低档 + 「跟随系统」标注）。
+            BrightnessSlider(
+                brightness = displaySettings.brightness,
+                onChange = onBrightness,
+            )
+
+            // 常亮开关（TYPE-03：阅读时保持屏幕常亮）。
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("保持常亮", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = displaySettings.keepScreenOn,
+                    onCheckedChange = onKeepScreenOn,
+                )
+            }
+
+            // 方向（TYPE-03，含跟随系统）。
+            OptionGroup(
+                label = "方向",
+                options = listOf(
+                    ReaderOrientation.SYSTEM to "跟随系统",
+                    ReaderOrientation.PORTRAIT to "竖屏",
+                    ReaderOrientation.LANDSCAPE to "横屏",
+                ),
+                selected = displaySettings.orientation ?: ReaderOrientation.SYSTEM,
+                onSelect = { onOrientation(it) },
+            )
         }
+    }
+}
+
+/**
+ * 亮度滑块行（TYPE-03）。本地 state 跟手拖动，松手写一次。
+ *
+ * null = 跟随系统（Slider 显示在最左 0% 位置，文案标注「跟随系统」）。
+ * 拖动到任意位置 → 设为 0.0–1.0；拖到最左（=0）→ 仍设为 0（最暗，非跟随系统）。
+ * 「跟随系统」需点 OptionGroup 的 SYSTEM 按钮恢复（Slider 不设 null 入口，避免误触）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BrightnessSlider(
+    brightness: Float?,
+    onChange: (Float?) -> Unit,
+) {
+    // null（跟随系统）用 0 作 Slider 显示位置；非 null 用实际值。
+    var local by remember(brightness) { mutableStateOf(brightness ?: 0f) }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("亮度", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (brightness == null) "跟随系统" else "${(brightness * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = local,
+            onValueChange = { local = it },
+            onValueChangeFinished = { onChange(local) },
+            valueRange = 0f..1f,
+        )
     }
 }
 
@@ -1136,4 +1270,17 @@ private fun NoteEditDialog(
             }
         },
     )
+}
+
+/**
+ * 从 [Context] 向上查找 [Activity]（lint 安全：LocalContext 不一定是 Activity，
+ * 但在 Compose Activity 宿主下 ContextWrapper 链最终到达 Activity）。
+ */
+private fun Context.findActivity(): Activity {
+    var ctx: Context? = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    error("无法从 Context 找到 Activity")
 }

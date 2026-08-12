@@ -1,7 +1,10 @@
 package com.xuziyue.ebook
 
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -38,13 +41,14 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -68,8 +72,8 @@ import com.xuziyue.ebook.ui.BookCover
 import com.xuziyue.ebook.ui.relativeTime
 import com.xuziyue.ebook.ui.theme.EbookReaderTheme
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * 单 Activity 入口。
@@ -78,44 +82,75 @@ import kotlinx.coroutines.launch
  * - `library`：书库列表 + 导入入口（LIB-01 完整：列表/网格 + 封面 + 进度 + 最近阅读；LIB-02 三入口；LIB-03 搜索/排序）。
  * - `detail/{bookId}`：书籍详情页（LIB-04）。卡片点击进此，"继续阅读"再进 reader。
  * - `reader/{bookId}`：阅读界面。bookId 作 route 参数，进程重建后 Navigation 自动恢复（design.md §6.5）。
+ *
+ * IMP-02：接收 ACTION_VIEW / ACTION_SEND（文件管理器 / 分享面板打开电子书）。
+ * 冷启动 [onCreate] + 热启动 [onNewIntent] 均从 Intent 取 Uri → [pendingImport] → LibraryScreen 消费。
  */
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
-    @Inject lateinit var importBookUseCase: ImportBookUseCase
+    /** IMP-02：待导入的外部 Uri（从 ACTION_VIEW/SEND Intent 提取，LibraryScreen 消费）。 */
+    private val pendingImport = MutableStateFlow<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleImportIntent(intent)
         setContent {
             EbookReaderTheme {
-                AppRoot(importBookUseCase)
+                AppRoot(
+                    pendingImport = pendingImport,
+                    onConsumeImport = { pendingImport.value = null },
+                )
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleImportIntent(intent)
+    }
+
+    /**
+     * IMP-02：从 ACTION_VIEW / ACTION_SEND Intent 提取电子书 Uri。
+     *
+     * ACTION_VIEW → [Intent.getData]；ACTION_SEND → [Intent.EXTRA_STREAM]。
+     * 提取后推入 [pendingImport]，清 action 防旋转重建重复触发。
+     */
+    private fun handleImportIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW && intent?.action != Intent.ACTION_SEND) return
+        val uri = intent.data ?: intent.getStreamUri()
+        if (uri != null) {
+            pendingImport.value = uri
+            intent.action = null
+        }
+    }
+
+    /** 兼容 API 33+ 的 getParcelableExtra 泛型签名变化。 */
+    @Suppress("DEPRECATION")
+    private fun Intent.getStreamUri(): Uri? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        }
 }
 
 @Composable
-private fun AppRoot(importBookUseCase: ImportBookUseCase) {
+private fun AppRoot(
+    pendingImport: StateFlow<Uri?>,
+    onConsumeImport: () -> Unit,
+) {
     val navController = rememberNavController()
-    val scope = rememberCoroutineScope()
 
     NavHost(navController = navController, startDestination = "library") {
         composable("library") {
             LibraryScreen(
-                onImportUri = { uri ->
-                    scope.launch {
-                        importBookUseCase.importUri(uri).bookIdOrNull()
-                            ?.let { navController.navigate("reader/$it") }
-                    }
-                },
-                onImportAsset = {
-                    scope.launch {
-                        importBookUseCase.importAsset(ALICE_ASSET).bookIdOrNull()
-                            ?.let { navController.navigate("reader/$it") }
-                    }
-                },
+                pendingImport = pendingImport,
+                onConsumeImport = onConsumeImport,
                 onOpenBook = { bookId -> navController.navigate("detail/$bookId") },
+                onOpenReader = { bookId -> navController.navigate("reader/$bookId") },
             )
         }
         composable(
@@ -156,9 +191,10 @@ private fun AppRoot(importBookUseCase: ImportBookUseCase) {
  */
 @Composable
 private fun LibraryScreen(
-    onImportUri: (Uri) -> Unit,
-    onImportAsset: () -> Unit,
+    pendingImport: StateFlow<Uri?>,
+    onConsumeImport: () -> Unit,
     onOpenBook: (String) -> Unit,
+    onOpenReader: (String) -> Unit,
 ) {
     val viewModel: LibraryViewModel = hiltViewModel()
     val query by viewModel.query.collectAsStateWithLifecycle()
@@ -166,11 +202,37 @@ private fun LibraryScreen(
     val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val items by viewModel.items.collectAsStateWithLifecycle(initialValue = emptyList())
+    val importing by viewModel.importing.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // IMP-02：外部 Intent 导入（ACTION_VIEW/SEND），与 SAF 导入共用 importEvents 反馈通道。
+    LaunchedEffect(Unit) {
+        pendingImport.collect { uri ->
+            if (uri != null) {
+                onConsumeImport()
+                viewModel.importUri(uri)
+            }
+        }
+    }
+
+    // IMP-05：导入结果反馈（Toast）+ 成功跳阅读器。
+    LaunchedEffect(Unit) {
+        viewModel.importEvents.collect { outcome ->
+            val msg = when (outcome) {
+                is ImportBookUseCase.Outcome.Imported -> "导入成功"
+                is ImportBookUseCase.Outcome.AlreadyExists -> "已在书库中"
+                is ImportBookUseCase.Outcome.Failed -> outcome.message
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            // 成功（Imported / AlreadyExists）→ 跳阅读器（用户意图是看书）。
+            outcome.bookIdOrNull()?.let { onOpenReader(it) }
+        }
+    }
 
     // SAF 文件选择器（红线 #3：不申请 MANAGE_EXTERNAL_STORAGE，只用 ACTION_OPEN_DOCUMENT）。
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let(onImportUri) }
+    ) { uri -> uri?.let { viewModel.importUri(it) } }
 
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -221,8 +283,13 @@ private fun LibraryScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             )
 
+            // IMP-05：导入进行中 indeterminate 进度条。
+            if (importing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
             OutlinedButton(
-                onClick = onImportAsset,
+                onClick = { viewModel.importAsset(ALICE_ASSET) },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             ) { Text("读内置样本 Alice（EPUB2）") }
 

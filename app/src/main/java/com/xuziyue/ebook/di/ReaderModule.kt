@@ -6,6 +6,7 @@ import androidx.datastore.dataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.xuziyue.ebook.data.BookFileImporter
+import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
@@ -90,6 +91,13 @@ object ReaderModule {
     fun provideReaderTypographyRepository(
         dataStore: DataStore<Preferences>,
     ): ReaderTypographyRepository = ReaderTypographyRepository(dataStore)
+
+    /** 阅读显示/环境设置仓库（TYPE-03 亮度/常亮/方向）：复用同一个全局 DataStore。 */
+    @Provides
+    @Singleton
+    fun provideReaderDisplaySettingsRepository(
+        dataStore: DataStore<Preferences>,
+    ): ReaderDisplaySettingsRepository = ReaderDisplaySettingsRepository(dataStore)
 
     @Provides
     @Singleton
