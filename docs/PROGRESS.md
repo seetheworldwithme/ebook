@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 24 | 4 |
+| P0（MVP 必做） | 28 | 26 | 2 |
 | P1（首个增强版） | 11 | 0 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 24 | 4 |
+| 合计 | 42 | 26 | 2 |
 
-> 当前进度：24 ✅ / 4 🚧（SET-01 i18n + SET-02 无障碍 + SET-03 系统字号/无障碍 + SET-05 隐私/许可证/崩溃日志 代码完成，待真机回归转 ✅）。详见文末变更记录。
+> 当前进度：26 ✅ / 2 🚧（SET-03 系统字号 + SET-05 隐私/许可证/崩溃日志 经 adb 真机回归已转 ✅；SET-01 i18n 剩英文界面肉眼、SET-02 无障碍剩 TalkBack 手指，二者 adb 能做的均已过）。详见文末变更记录。
 
 ---
 
@@ -95,11 +95,11 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| SET-01 | 🚧 | 简体中文 + 英文；所有用户可见文案进入资源文件 |
-| SET-02 | 🚧 | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度 |
-| SET-03 | 🚧 | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达。SET-03 刀：①正文跟随系统字号——`TypographyMappings.toEpubPreferences` 增 `systemFontScale` 参（fontSize × 系统字号倍率），ReaderScreen 据 `LocalDensity.fontScale` 推入 VM（镜像 setSystemDark 范式），WebView 不继承系统 fontScale 故需显式折算；②无障碍审查——SET-02 已覆盖大部分（色点名+RadioButton selected / OptionGroup selected / 边缘翻页按钮+音量键+滑动），补齐 SortMenuItem 选中态 stateDescription。TypographyMappingsTest +3 用例。🚧（代码完成，待真机回归转 ✅） |
+| SET-01 | 🚧 | 简体中文 + 英文；所有用户可见文案进入资源文件。adb 层面已确认（2026-08-13）：APK 完整打包英文资源（aapt2 见 175 个 `en` config，每 key 均含 zh-default+en 双值，如 library_settings=设置/Settings、library_sort=排序/Sort），StringResourceKeysTest key-parity 单测过。剩英文界面肉眼——adb 切不了非 root 真机 locale（`setprop persist.sys.locale` 被拒 / `cmd locale` 无此命令），须徐先生系统设置切英文验收 |
+| SET-02 | 🚧 | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度。adb 层面已确认（2026-08-13）：语义标签全达标——阅读器顶栏「返回书库/目录/搜索/加书签」+ 底栏「字号±/排版」content-desc 齐全；翻页区「上一页/下一页」class=Button；排版面板 5 Slider 带 content-desc（字号 100%/行高 1.00×/段距/页边距/亮度跟随系统）+ Switch「保持常亮/音量键翻页」toggleable 合并节点 + OptionGroup（对齐/字体/翻页方式/主题/方向）checkable=true+checked 选中态正确，选项高 144px=48dp 达标。剩 TalkBack 实际播报 / 焦点顺序 / heading trait（uiautomator 不输出） / 高对比度肉眼 + REL-06 完整流程——须徐先生手指 |
+| SET-03 | ✅ | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达。SET-03 刀：①正文跟随系统字号——`TypographyMappings.toEpubPreferences` 增 `systemFontScale` 参（fontSize × 系统字号倍率），ReaderScreen 据 `LocalDensity.fontScale` 推入 VM（镜像 setSystemDark 范式），WebView 不继承系统 fontScale 故需显式折算；②无障碍审查——SET-02 已覆盖大部分（色点名+RadioButton selected / OptionGroup selected / 边缘翻页按钮+音量键+滑动），补齐 SortMenuItem 选中态 stateDescription。TypographyMappingsTest +3 用例。✅（adb 真机回归 2026-08-13：`settings put system font_scale 1.5`→Activity 重建→正文放大，mcp 图像 diff 坐实 1.5× 字号生效；测量法注记：paginated 重排页字大→每页字数少，全页深色像素占比近似守恒，须用图像 diff/单字面积而非整页占比，详变更记录） |
 | SET-04 | ✅ | 本地内容默认不上传；无网络权限可完成核心阅读。合刀：`OfflineGuaranteeTest` 4 项固化不变量——源码 Manifest 零网络权限 / 合并后发布 Manifest 不含 INTERNET / catalog 无网络分析库 / 业务源码无直接网络调用（Readium `DefaultHttpClient` 白名单：无 INTERNET 兜底+本地惰性）。实测合并 Manifest 仅有依赖带入的 ACCESS_NETWORK_STATE+WAKE_LOCK（查询/保活，不含 INTERNET） |
-| SET-05 | 🚧 | 隐私说明、开源许可证页、崩溃日志开关；日志不含正文 / 摘录 / 完整路径。SET-05 刀：①设置入口（NavHost +3 路由 settings/privacy/licenses + 书库顶栏 Settings 齿轮 IconButton）；②隐私说明页（4 节：数据存储/网络权限/崩溃日志/第三方依赖）；③开源许可证页（手写清单 19 条依赖 + Apache2.0/BSD-3/GPL-CPE 全文 assets，点击展开）；④崩溃日志开关（AppSettingsRepository DataStore 默认关 + CrashLogger Thread.setDefaultUncaughtExceptionHandler 纯本地写 + sanitize 脱敏红线 #8 + EbookApp.onCreate 种 Timber DebugTree/装 handler + 分享按钮 ACTION_SEND）；⑤CrashLogSanitizerTest 8 项固化脱敏。🚧（代码完成，待真机回归转 ✅） |
+| SET-05 | ✅ | 隐私说明、开源许可证页、崩溃日志开关；日志不含正文 / 摘录 / 完整路径。SET-05 刀：①设置入口（NavHost +3 路由 settings/privacy/licenses + 书库顶栏 Settings 齿轮 IconButton）；②隐私说明页（4 节：数据存储/网络权限/崩溃日志/第三方依赖）；③开源许可证页（手写清单 19 条依赖 + Apache2.0/BSD-3/GPL-CPE 全文 assets，点击展开）；④崩溃日志开关（AppSettingsRepository DataStore 默认关 + CrashLogger Thread.setDefaultUncaughtExceptionHandler 纯本地写 + sanitize 脱敏红线 #8 + EbookApp.onCreate 种 Timber DebugTree/装 handler + 分享按钮 ACTION_SEND）；⑤CrashLogSanitizerTest 8 项固化脱敏。✅（adb 真机回归 2026-08-13 全口径过：隐私页四节 / 许可证页 26 条含 jsoup-MIT·Readium-BSD·desugar-GPL+CPE 三非-Apache 族 / 崩溃日志开关 toggle+杀重启保位 / 分享弹系统 chooser / 5 条真实崩溃日志零敏感命中，详变更记录） |
 
 ---
 
@@ -166,6 +166,14 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-13）：**adb 自动化真机回归（vivo V2329A）：SET-03 + SET-05 经 adb 全口径验证转 ✅；SET-01/SET-02 的 adb 可验部分全做完，剩纯手指项。P0 24✅→26✅ / 4🚧→2🚧。** 徐先生要求「把 adb 能自动做的都做了」，本轮把 4 项 🚧 中凡 adb 可验的全部跑完。
+> **SET-03 字号放大 ✅**：`settings put system font_scale 1.5` → MainActivity 重建（configChanges 不含 fontScale）→ `ReaderScreen` `LocalDensity.fontScale` 经 LaunchedEffect 推 `setSystemFontScale` → Readium fontSize×倍率生效。mcp 图像 diff 坐实 1.5× 字号生效（每字像素↑~50%、行高↑、段落结构不变）。**测量法踩坑**：paginated 模式字号变大触发 Readium 重排→每页字数变少，「整页深色像素占比」因字大×字少近似守恒（实测 9.43%→9.83% 仅 1.04×，假阴性），须用图像 diff/单字面积判定，不能用整页占比。
+> **SET-05 隐私/许可证/崩溃日志 ✅（全口径真机过）**：① 隐私页四节（数据存储/网络权限/崩溃日志/第三方依赖）齐全；② 许可证页滚动确认 26 条 + 三非-Apache 许可证族——jsoup1.22.2→MIT、Readium3.3.0→BSD-3、desugar2.1.5→GPL v2+CPE，PdfiumAndroid1.9.8 单列（红线#7）；③ 崩溃日志开关 toggle on→off→force-stop 冷启→仍 off（DataStore 保位）→恢复 on；④ 分享崩溃日志→`com.android.intentresolver/.ChooserActivityLauncher` 系统分享面板（LocalSend/微信/支付宝）；⑤ **真实崩溃脱敏实证**——adb 直读 `files/crash_logs/` 5 条真实 Java 异常日志（含 2026-08-13 10:34 那条 `SQLiteConstraintException`@`ReadingProgressDao.upsert`，即 REL-05 清理测试污染触发、REL-07 已定性非生产 bug 的那条），grep 全 5 条**零敏感命中**（无 .epub/.txt/.pdf 路径、无 /data/data、无 contentHash、无正文/书名/摘录），源码行号保留——CrashLogger「真实捕获→脱敏→落盘」链路被历史崩溃客观坐实（补上 SET-05 原注记「adb 无法触发 Java UncaughtException」的缺口）；带路径异常的脱敏仍由 CrashLogSanitizerTest 8 项单测覆盖（这 5 条均 Room/协程异常，堆栈本不含用户文件路径）。
+> **SET-01 i18n（保持 🚧）**：adb 间接验证——aapt2 解包装机 APK 确认英文资源完整打包（175 个 `en` config，每 key 均含 zh-default+en 双值，如 library_settings=设置/Settings、library_sort=排序/Sort），配 StringResourceKeysTest key-parity 单测，切英文不会缺字回退。**adb 切不了非 root 真机 locale**（`setprop persist.sys.locale` 被拒 / `cmd locale set-system-locales` 未知命令）→ 英文界面肉眼仍须徐先生系统设置切语言。
+> **SET-02 无障碍（保持 🚧）**：adb 语义审计（uiautomator dump）全达标——阅读器顶栏「返回书库/目录/搜索/加书签」+ 底栏「字号±/排版」content-desc 齐全；翻页区「上一页/下一页」class=Button；排版面板 5 Slider 带「标签+值」content-desc（字号100%/行高1.00×/段距/页边距/亮度跟随系统）+ 2 Switch「保持常亮/音量键翻页」toggleable 合并节点 + 5 OptionGroup（对齐/字体/翻页方式/主题/方向）checkable=true+checked 选中态正确，选项热区 144px=48dp 达标。**adb 验不了**：TalkBack 实际播报、焦点顺序、heading() trait（uiautomator 不输出 heading 语义）、高对比度肉眼、REL-06 完整流程——均须徐先生手指。
+> **设备状态已还原**：font_scale 恢复 1.0、崩溃日志开关恢复 on（用户原状）、阅读进度未动（仅 dump 未翻页）、未手动改真机 DB（遵循 [[no-manual-db-surgery]]）。crash_logs 5 条为 CrashLogger 正常产物保留。app 停在设置页。
+> **本轮无代码改动**：纯 adb 真机回归 + PROGRESS.md 文档更新，不触发「改完代码必须测试」工作流；故未跑 gradle 单测/编译（已装 build 是最近 commit 的 installDebug）。
 
 > 实现状态（2026-08-13）：**移除书库首页「读内置样本 Alice（EPUB2）」按钮（清理，非需求项）。** 徐先生确认不再需要——书库已有真实书 + SAF/intent 导入全通，样本按钮是 Phase 0 零摩擦验证的遗留。完整删整条死链：`MainActivity` 按钮 + `ALICE_ASSET` 常量 → `LibraryViewModel.importAsset` → `ImportBookUseCase.importAsset` → `BookFileImporter.copyAssetEpub`（KDoc 同步去「两条来源」改「SAF 导入」）→ 字符串 `library_sample_alice` / `import_sample_failed`（zh/en）→ 内置 asset `samples/alice-in-wonderland.epub`（`samples/` 目录随之清空，APK 减重）。无测试依赖（grep 确认零残留引用）。`assembleDebug` + `testDebugUnitTest`（174 passed）+ `lintDebug` 全绿。
 
