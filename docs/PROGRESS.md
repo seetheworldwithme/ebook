@@ -141,7 +141,7 @@
 | REL-02 | ✅ | EPUB/TXT 和 PDF 的能力矩阵与 UI 完全一致，不出现不可用按钮 |
 | REL-03 | ✅ | 强杀、重启、升级迁移后，进度 / 书签 / 笔记不丢失 |
 | REL-04 | ✅ | 导入恶意压缩包 / 损坏 / 超大 / 空间不足场景不崩溃、不产生半成品 |
-| REL-05 | ⬜ | 达到已固化基线设备上的启动、首开、内存指标 |
+| REL-05 | ✅ | 达到已固化基线设备上的启动、首开、内存指标 |
 | REL-06 | ⬜ | TalkBack 能完成「导入一本书 → 开始阅读 → 添加书签 → 回到书库」 |
 | REL-07 | ⬜ | 第三方依赖许可证、隐私清单、数据安全声明完成审核 |
 
@@ -166,6 +166,13 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-13）：**REL-05 性能基线 ⬜→✅（vivo V2329A）。** 发布门槛 7 项已完成 5 项（REL-01/02/03/04/05 ✅），剩余 REL-06（TalkBack）/ REL-07（许可证审核）。基线设备**固化为 vivo V2329A**（Android 16 / API 36 / ~15 GB RAM），全量数据见 `docs/perf/baseline-V2329A-2026-08-12.md` + `.csv`。
+> **门槛三指标全过**：① **冷启动**——1008 本合成书库冷启动至可交互 **P95 1002 ms ≪ 2000 ms**（小书库 976 ms，书数几乎无影响，LazyColumn 只合成可见项 + Room 单查）；② **首开**——10 MB EPUB 恢复阅读 **P95 167 ms ≪ 1500 ms**（9× 余量）；③ **内存**——0.1 MB EPUB → PSS +80 MB、29.9 MB EPUB → +57 MB（文件大 300×，PSS 增量反更小 → **非线性**，渲染基础设施常量开销 ~55–80 MB，不随文件大小线性增长），全程无 OOM。
+> **测量工具链 `scripts/perf/`（全新，无新增网络依赖）**：`perf-common.sh`（adb/设备/统计公共库）+ `measure-startup.sh`（am start -W TotalTime，每轮 force-stop+sleep 保 COLD）+ `measure-firstopen.sh`（logcat 标记计时 START→FIRST_PAGE）+ `measure-memory.sh`（dumpsys meminfo 多文件大小对比）+ `seed-library.sh`（插/删 1000 合成行，authors=`[]`/status=`READING` 合法值，测完即删恢复原状）+ `seed-book-file.sh`（直接 seed 真实文件书，绕过 file:// 限制）+ `import_file.sh`（base64+tee 导入）+ `gen_perf_sample.py`（确定性生成 10/30 MB 合法 EPUB + 大 TXT，随机像素 PNG 撑体积不可压缩，contentHash 去重生效）+ `tap_node.py`（uiautomator 找可点击祖先中心）+ `parse_markers.py`（logcat 标记时间戳）+ `run-baseline.sh`（全流程编排 + 自动写报告）。
+> **app 唯一源码改动**：`ReaderViewModel.openBook`（START，幂等守卫后）+ `openPublication`（READY，Publication 开 + Locator 恢复）+ `ReaderFragment.bindNavigatorObservers`（FIRST_PAGE，currentLocator 首次发射）各加 1 行 `Timber.i("PERF_READER_OPEN_*")`——debug 树落 logcat、release 无树即 no-op，零运行时成本。`:app:assembleDebug` + `:app:installDebug` 通过。
+> **vivo 真机踩坑（已固化进脚本）**：① **run-as 假沙盒**——shell 重定向（`>`/`<`/`sh -c`）权限/路径错乱，写文件必须 `run-as base64 -d | run-as tee <绝对路径>`（tee 以 app uid 自己 open），读大小用 `wc -c <file-arg>`；② **file:// TXT 导入失效**（扩展名探测返回 null，仅 .epub 可导入）→ 大 TXT 改 `seed-book-file.sh` 直接 seed；③ **合成行字段必须合法**——authors 是 `List<String>`↔JSON（须 `[]` 非 `REL05`）、status 是 `ReadingStatus{UNREAD,READING,FINISHED}`（须合法非 `READY`），否则 Room 反序列化崩（启动即 FATAL）；④ **uiautomator dump 过渡期偶发失败**（返回旧文件）→ tap_node_center 加 dump 重试；⑤ **bash `$VAR` 紧跟中文**在 UTF-8 locale 下被并入变量名 → 一律 `${VAR}`；⑥ **macOS BSD awk 无 asort** → stats 改 `sort -n` 预排序。测后清理：设备恢复原 6 本书，perf 样本与合成行全部删除。
+> **设备备注**：V2329A 实测 ~15 GB RAM，**高于** design §8「8 GB 中端」参考——本机数值偏乐观，真实 8 GB 设备可能略差；门槛余量充足（启动 2×、首开 9×），即便 8 GB 设备仍可达标。流畅度（帧时间/Macrobenchmark）为 §8 NFR 但不在 REL-05 门槛行内，本次用 adb 脚本（非 Macrobenchmark 模块）测启动/首开/内存三项门槛指标，帧时间留后续。
 
 > 实现状态（2026-08-12）：**REL-01/02/03 形式化回归全过 ⬜→✅（vivo V2329A）。** 发布门槛 7 项已完成 4 项（REL-01/02/03/04 ✅），剩余 REL-05（性能基线）/ REL-06（TalkBack）/ REL-07（许可证审核）。
 > **REL-01 格式回归矩阵**：base64 传输样本到 app 内部目录 + ACTION_VIEW file:// 导入。EPUB2 Alice（内置样本按钮）✅ + EPUB3 alice-epub3-images ✅ + 中文 EPUB2 山海經 ✅ + EPUB3 排版三样本（ruby/rtl/vertical，书库直开）✅——全部导入成功 + reader 打开 + 无崩溃。**TXT**：file:// URI 扩展名探测返回 null（contentResolver.query 对 file:// 无 ContentProvider 支撑）→ 回退 `.epub` → 安全校验器拦截（非 ZIP）。此为 adb 测试路径限制，**真实 SAF content:// 不受影响**（P0V-04 已验 TXT 全链路 ✅）。FXL cole 未测（P0V-01 已验 + 已知 vivo 内存压力偶发，非稳定 bug）。

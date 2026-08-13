@@ -28,6 +28,7 @@ import com.xuziyue.ebook.reader.readium.toEpubPreferences
 import com.xuziyue.ebook.reader.readium.toReaderCapabilities
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -203,6 +204,8 @@ class ReaderViewModel @Inject constructor(
     fun openBook(bookId: String) {
         if (bookId == currentBookId) return
 
+        // REL-05 性能基线：首开计时起点（debug 树落 logcat，release 无树即 no-op）。
+        Timber.i("PERF_READER_OPEN_START bookId=$bookId")
         // 切书前用旧 bookId 保存旧 Locator；随后任何旧 Navigator 迟到回调都会被来源校验拒绝。
         val previousBookId = currentBookId
         val previousLocator = latestLocator
@@ -286,6 +289,8 @@ class ReaderViewModel @Inject constructor(
                         // 派生偏好的当前快照（含 SYSTEM 解析）；后续 Fragment 持续 collect preferences 覆盖。
                         preferences = preferences.value,
                     )
+                    // REL-05 性能基线：Publication 已开 + 恢复 Locator 已就绪（渲染前）。
+                    Timber.i("PERF_READER_OPEN_READY bookId=$bookId")
                 }
                 .onFailure { error ->
                     if (bookId == currentBookId) {

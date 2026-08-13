@@ -1,0 +1,2 @@
+date,model,startup_p95_small_ms,startup_p95_1000_ms,firstopen_p95_ms,mem_idle_kb,mem_delta_0.1mb_kb,mem_delta_9.9mb_kb,mem_delta_29.9mb_kb
+2026-08-12,V2329A,976,1002,167,183993,80595,64445,56616

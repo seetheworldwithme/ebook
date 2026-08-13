@@ -18,6 +18,9 @@ local.properties
 # 本地版权样本 —— 绝不入库（CLAUDE.md 红线）
 samples/local/
 
+# REL-05 性能夹具 —— 由 scripts/perf/gen_perf_sample.py 确定性生成（大体积二进制，不入库）
+samples/perf/
+
 # OS
 .DS_Store
 

@@ -1,0 +1,143 @@
+################################################################
+# REL-05 性能基线   设备=V2329A   日期=2026-08-12
+################################################################
+scripts/perf/perf-common.sh: line 33: $1: unbound variable
+device_model=V2329A
+device_brand=vivo
+android_release=16
+android_sdk=36
+build_id=PD2329D_A_16.2.17.2.W10
+abis=arm64-v8a
+mem_total_kb=15570776
+app_version=versionName=0.1.0
+
+==== [fixtures] 生成夹具 ====
+OK /Volumes/coding/GO/myself/ebook/samples/perf/perf-10mb.epub  (9.9 MB)
+OK /Volumes/coding/GO/myself/ebook/samples/perf/perf-large.txt  (20.0 MB)
+
+==== [epub_import] ====
+→ 传输 /Volumes/coding/GO/myself/ebook/samples/perf/perf-10mb.epub → files/perf-10mb.epub（base64， 11M）…
+  ✓ 落盘 10345008 bytes
+→ 触发导入（MIME=application/epub+zip）…
+✓ 导入成功：7 → 8 本（+ 1）
+
+==== [txt_import] ====
+→ 传输 /Volumes/coding/GO/myself/ebook/samples/perf/perf-large.txt → files/perf-large.txt（base64， 20M）…
+  ✓ 落盘 20971521 bytes
+→ 触发导入（MIME=text/plain）…
+⚠ 书数未增（8 → 8）：可能已在书库（去重）或导入失败——查 Toast/日志
+TXT 样本标题：（未导入）  当前书库：8 本
+
+==== [startup_small] ====
+=== 冷启动测量（N=25，当前书库 8 本）===
+run,TotalTime_ms,LaunchState
+1,884,COLD
+2,931,COLD
+3,902,COLD
+4,930,COLD
+5,951,COLD
+6,953,COLD
+7,861,COLD
+8,944,COLD
+9,940,COLD
+10,962,COLD
+11,912,COLD
+12,934,COLD
+13,976,COLD
+14,952,COLD
+15,918,COLD
+16,932,COLD
+17,965,COLD
+18,906,COLD
+19,937,COLD
+20,899,COLD
+21,946,COLD
+22,924,COLD
+23,976,COLD
+24,895,COLD
+25,922,COLD
+--- 统计（ms）---
+n=25 min=861 p50=932 p95=976 max=976 mean=930
+
+==== [seed_1000] ====
+-> insert 1000 synthetic books (tag=perfseed) ...
+OK seed=1000 total=1008
+
+==== [startup_1000] ====
+=== 冷启动测量（N=25，当前书库 1008 本）===
+run,TotalTime_ms,LaunchState
+1,915,COLD
+2,956,COLD
+3,908,COLD
+4,981,COLD
+5,917,COLD
+6,975,COLD
+7,919,COLD
+8,959,COLD
+9,875,COLD
+10,919,COLD
+11,903,COLD
+12,868,COLD
+13,927,COLD
+14,924,COLD
+15,982,COLD
+16,914,COLD
+17,938,COLD
+18,960,COLD
+19,938,COLD
+20,922,COLD
+21,953,COLD
+22,869,COLD
+23,897,COLD
+24,933,COLD
+25,946,COLD
+--- 统计（ms）---
+n=25 min=868 p50=924 p95=981 max=982 mean=928
+
+==== [seed_cleanup] ====
+OK deleted 1000 synthetic books. total=8
+
+==== [firstopen] ====
+=== 首开测量（N=15，target=首开性能样本）===
+run,total_ms,open_ms,render_ms
+1,161,162,-1
+2,164,166,-2
+3,166,168,-2
+4,143,145,-2
+5,167,168,-1
+6,152,153,-1
+7,NA_marker,,
+8,151,153,-2
+9,161,163,-2
+10,164,166,-2
+11,161,163,-2
+12,159,161,-2
+13,158,160,-2
+14,150,152,-2
+15,NA_marker,,
+--- 总耗时 START→FIRST_PAGE（ms）---
+n=13 min=143 p50=161 p95=167 max=167 mean=158
+--- 开书成本 START→READY（ms）---
+n=13 min=145 p50=162 p95=168 max=168 mean=160
+--- 渲染成本 READY→FIRST_PAGE（ms）---
+(无有效样本)
+
+==== [memory] ====
+=== 内存测量 ===
+格式：total_pss java_heap native_heap graphics（KB）
+idle(书库)        : 183146 19756 11684 45288
+→ 打开大文件 大文件 …
+after_open_large  : 未找到「大文件」（先导入）
+→ 打开 10MB EPUB 首开性能样本 …
+after_open_10mb   : 245728 24360 20124 47776
+--- 汇总（KB）---
+idle_pss=183146
+large_pss=0 delta_large=-183146
+epub10_pss=245728 delta_10mb=62582
+scripts/perf/perf-common.sh: line 33: $1: unbound variable
+
+################################################################
+✓ 报告：/Volumes/coding/GO/myself/ebook/docs/perf/baseline-V2329A-2026-08-12.md
+✓ CSV ：/Volumes/coding/GO/myself/ebook/docs/perf/baseline-V2329A-2026-08-12.csv
+✓ 日志：/Volumes/coding/GO/myself/ebook/docs/perf/raw-V2329A-2026-08-12.log
+################################################################

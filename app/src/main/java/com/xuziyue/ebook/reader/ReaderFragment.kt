@@ -29,6 +29,7 @@ import kotlinx.coroutines.Job
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.services.locateProgression
+import timber.log.Timber
 
 /**
  * Reader 的 Fragment 宿主（命门：Compose↔Readium 桥接）。
@@ -159,7 +160,14 @@ class ReaderFragment : Fragment() {
         navigatorBindingJob = viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // currentLocator → VM（进度 + 防抖落盘）
-                launch { nav.currentLocator.collect { viewModel.onLocatorUpdated(bookId, it) } }
+                launch {
+                    var firstPage = true
+                    nav.currentLocator.collect {
+                        // REL-05 性能基线：首次定位 ≈ 首页已渲染（START→此处为首开总耗时）。
+                        if (firstPage) { firstPage = false; Timber.i("PERF_READER_OPEN_FIRST_PAGE bookId=$bookId") }
+                        viewModel.onLocatorUpdated(bookId, it)
+                    }
+                }
                 // preferences → submitPreferences（字号/主题实时生效）
                 launch { viewModel.preferences.collect { nav.submitPreferences(it) } }
                 // decorations → applyDecorations（高亮渲染，声明整组完整状态）
