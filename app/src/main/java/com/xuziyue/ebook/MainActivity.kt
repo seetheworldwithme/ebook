@@ -9,7 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -239,6 +242,8 @@ private fun LibraryScreen(
     val importSuccessText = stringResource(R.string.import_success)
     val importAlreadyExistsText = stringResource(R.string.import_already_exists)
     val importProgressText = stringResource(R.string.reader_importing)
+    val deleteLongClickLabel = stringResource(R.string.library_delete_long_click)
+    var pendingDelete by remember { mutableStateOf<LibraryItem?>(null) }
 
     // IMP-02：外部 Intent 导入（ACTION_VIEW/SEND），与 SAF 导入共用 importEvents 反馈通道。
     LaunchedEffect(Unit) {
@@ -261,6 +266,13 @@ private fun LibraryScreen(
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             // 成功（Imported / AlreadyExists）→ 跳阅读器（用户意图是看书）。
             outcome.bookIdOrNull()?.let { onOpenReader(it) }
+        }
+    }
+
+    // IMP-07：删除结果反馈（Toast）。两态走 UserMessage.resolve（避免 Composable 内 context.getString 触发 lint）。
+    LaunchedEffect(Unit) {
+        viewModel.deleteEvents.collect { outcome ->
+            Toast.makeText(context, outcome.message.resolve(context), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -368,7 +380,12 @@ private fun LibraryScreen(
                 viewMode == LibraryViewMode.LIST -> {
                     LazyColumn {
                         items(items, key = { it.book.id }) { item ->
-                            LibraryListRow(item, onClick = { onOpenBook(item.book.id) })
+                            LibraryListRow(
+                                item = item,
+                                onClick = { onOpenBook(item.book.id) },
+                                onLongClick = { pendingDelete = item },
+                                onLongClickLabel = deleteLongClickLabel,
+                            )
                             HorizontalDivider()
                         }
                     }
@@ -382,12 +399,37 @@ private fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         gridItems(items, key = { it.book.id }) { item ->
-                            LibraryGridCard(item, onClick = { onOpenBook(item.book.id) })
+                            LibraryGridCard(
+                                item = item,
+                                onClick = { onOpenBook(item.book.id) },
+                                onLongClick = { pendingDelete = item },
+                                onLongClickLabel = deleteLongClickLabel,
+                            )
                         }
                     }
                 }
             }
         }
+    }
+
+    // IMP-07：长按书卡 → 删除确认对话框（列表/网格统一）。
+    pendingDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.library_delete)) },
+            text = { Text(stringResource(R.string.library_delete_confirm, item.book.title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBook(item.book)
+                    pendingDelete = null
+                }) { Text(stringResource(R.string.library_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 
@@ -412,13 +454,23 @@ private fun SortMenuItem(
 }
 
 /** 书库列表（默认，LIB-01）：横向卡——封面缩略 + 书名 + 作者 + 进度条 + 最近阅读时间。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryListRow(item: LibraryItem, onClick: () -> Unit) {
+private fun LibraryListRow(
+    item: LibraryItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onLongClickLabel: String,
+) {
     val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = onLongClickLabel,
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -478,12 +530,22 @@ private fun LibraryListRow(item: LibraryItem, onClick: () -> Unit) {
 }
 
 /** 书库网格卡（LIB-01）：封面大图 + 书名 + 作者 + 进度。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryGridCard(item: LibraryItem, onClick: () -> Unit) {
+private fun LibraryGridCard(
+    item: LibraryItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onLongClickLabel: String,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = onLongClickLabel,
+            ),
     ) {
         BookCover(
             coverPath = item.book.coverPath,

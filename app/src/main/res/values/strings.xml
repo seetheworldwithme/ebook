@@ -4,6 +4,7 @@
     <!-- 通用 -->
     <string name="common_follow_system">跟随系统</string>
     <string name="common_selected">已选中</string>
+    <string name="common_cancel">取消</string>
 
     <!-- 书库（LIB） -->
     <string name="library_title">书库</string>
@@ -23,6 +24,11 @@
     <string name="library_empty_recent">还没有最近阅读的书</string>
     <string name="library_empty_all">还没有书，导入一本开始吧</string>
     <string name="library_unread">未读</string>
+    <string name="library_delete">删除书籍</string>
+    <string name="library_delete_confirm">将永久删除《%1$s》及其阅读进度、书签和笔记，且无法恢复。</string>
+    <string name="library_delete_success">已删除《%1$s》</string>
+    <string name="library_delete_failed">删除失败：%1$s</string>
+    <string name="library_delete_long_click">删除</string>
 
     <!-- 书籍详情（LIB-04） -->
     <string name="detail_title_default">书籍详情</string>

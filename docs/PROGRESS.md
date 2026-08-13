@@ -108,7 +108,7 @@
 | ID | 状态 | 需求 |
 | --- | --- | --- |
 | IMP-06 | ⬜ | 用户授权指定目录并增量扫描（SAF 目录授权） |
-| IMP-07 | ⬜ | 删除书籍时选「仅移除」或「同时删 App 内副本」 |
+| IMP-07 | ✅ | 删除书籍时选「仅移除」或「同时删 App 内副本」。首刀（2026-08-13）：首页长按书卡弹确认框直接删（DB+文件一起删，ForeignKey CASCADE 自动清进度/书签/笔记）；经徐先生确认跳过「仅移除/删副本」二选一（私有目录下留孤儿文件无意义、重导有 contentHash 去重）。真机回归（vivo V2329A）全过：长按确认删除（DB-1 + 书源/封面文件删 + 列表消失）、取消防误删、FATAL=0。详见变更记录 |
 | LIB-05 | ⬜ | 收藏、标签、自定义书架 |
 | LIB-06 | ⬜ | 批量选择、移动到书架、删除、重新提取元数据 |
 | READ-09 | ⬜ | 历史位置前进 / 后退、脚注弹层、外链确认 |
@@ -166,6 +166,12 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-13）：**IMP-07 删书首刀 ⬜→✅（单测+编译+lint+真机回归全过，vivo V2329A）。** 首页书库此前无任何删除入口（点击只进详情/阅读）；本地优先 app 下文件副本在私有目录不可见，没有 app 内删书入口就只能 `run-as` 手术（已踩 FK crash，见记忆 no-manual-db-surgery）。本次落地 IMP-07 首刀。
+> **口径**（徐先生拍板）：**直接删**——DB 记录（含进度/书签/笔记）+ 书源文件 + 封面一步到位；**不做** IMP-07 原文「仅移除 / 同时删副本」二选一（私有目录下留孤儿文件无意义、重导有 contentHash 去重）。**入口**：长按书卡弹 Material3 `AlertDialog` 确认框（列表/网格统一；点书卡仍进详情页，不破坏现有交互）。
+> **实现**：① `BookRepository.deleteBook(book)`——先 `dao.deleteById`（ForeignKey CASCADE 自动清 reading_progress / bookmarks / annotations 三表）再 best-effort `runCatching { File.delete() }` 删 filePath + coverPath；顺序「先 DB 后文件」保证不留孤儿记录（红线 #4 精神），文件删除失败不回滚 DB（孤儿文件无害、不阻塞删书），无需 Context（路径绝对）。② `LibraryViewModel` 加 `deleteEvents` Channel（`DeleteOutcome.Deleted/Failed`，仿 `importEvents` 范式）+ `deleteBook(book)`。③ `MainActivity.LibraryScreen`：`LibraryListRow`/`LibraryGridCard` `clickable`→`combinedClickable`（`onLongClickLabel` 无障碍兜底），`pendingDelete` 状态驱动确认框，`LaunchedEffect` collect 事件 Toast。④ strings.xml 中英文各 +6 key（library_delete / confirm / success / failed / long_click + common_cancel），StringResourceKeysTest key-parity 保持。
+> **测试**：新增 `BookRepositoryTest`（Robolectric in-memory Room）4 用例——删 books 主行 / CASCADE 连带清三子表 / 删真实书源 + 封面文件 / 文件不存在不抛。`:app:testDebugUnitTest` 全绿。
+> **真机回归（vivo V2329A）全过 ✅**：导入未在库的 fxl-cole 样本做测试书（不碰真实数据）→ 长按书卡弹 Material3 确认框（文案「将永久删除《Thomas Cole - The Voyage of Life》及其阅读进度、书签和笔记，且无法恢复。」+ 取消/删除书籍按钮，i18n 正确）→ 点删除：DB 8→7、`files/books` 删 e38ed606 书源、`files/covers` 8→7 删封面、书库列表实时消失、本次 session FATAL=0；**取消路径**也验（长按→取消→DB 不变、cole 仍在、框关闭，防误删生效）；测后清理测试书 + 导入源残留，设备恢复基线（DB 7 本 = 原状）。**范围边界**：批量删除（LIB-06 仍 ⬜）、二选一口径、详情页入口本次不做，留作可选增强。
 
 > 实现状态（2026-08-13）：**adb 自动化真机回归（vivo V2329A）：SET-03 + SET-05 经 adb 全口径验证转 ✅；SET-01/SET-02 的 adb 可验部分全做完，剩纯手指项。P0 24✅→26✅ / 4🚧→2🚧。** 徐先生要求「把 adb 能自动做的都做了」，本轮把 4 项 🚧 中凡 adb 可验的全部跑完。
 > **SET-03 字号放大 ✅**：`settings put system font_scale 1.5` → MainActivity 重建（configChanges 不含 fontScale）→ `ReaderScreen` `LocalDensity.fontScale` 经 LaunchedEffect 推 `setSystemFontScale` → Readium fontSize×倍率生效。mcp 图像 diff 坐实 1.5× 字号生效（每字像素↑~50%、行高↑、段落结构不变）。**测量法踩坑**：paginated 模式字号变大触发 Readium 重排→每页字数变少，「整页深色像素占比」因字大×字少近似守恒（实测 9.43%→9.83% 仅 1.04×，假阴性），须用图像 diff/单字面积判定，不能用整页占比。

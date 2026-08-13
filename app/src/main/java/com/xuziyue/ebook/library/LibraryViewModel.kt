@@ -3,9 +3,12 @@ package com.xuziyue.ebook.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.ImportBookUseCase
+import com.xuziyue.ebook.model.Book
 import com.xuziyue.ebook.model.LibraryItem
+import com.xuziyue.ebook.ui.UserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -87,6 +90,28 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // ===== 删除（IMP-07 首刀：长按删书，DB + 文件副本一起删）=====
+
+    /** 一次性删除结果事件（UI collect 后 Toast 反馈）。 */
+    private val _deleteEvents = Channel<DeleteOutcome>(Channel.BUFFERED)
+    val deleteEvents = _deleteEvents.receiveAsFlow()
+
+    /**
+     * 删除一本书（IMP-07）。完成后 [deleteEvents] emit 结果（[DeleteOutcome.Deleted] / [DeleteOutcome.Failed]）。
+     * 文件清理失败已在 [BookRepository.deleteBook] 内吞掉，这里只捕获 DB 删除异常。
+     */
+    fun deleteBook(book: Book) {
+        viewModelScope.launch {
+            val outcome = try {
+                repository.deleteBook(book)
+                DeleteOutcome.Deleted(UserMessage.Res(R.string.library_delete_success, listOf(book.title)))
+            } catch (e: Exception) {
+                DeleteOutcome.Failed(UserMessage.Res(R.string.library_delete_failed, listOf(e.message ?: "")))
+            }
+            _deleteEvents.send(outcome)
+        }
+    }
+
     fun setQuery(value: String) { query.value = value }
     fun setFilter(value: LibraryFilter) { filter.value = value }
     fun setSort(value: LibrarySort) { sort.value = value }
@@ -94,6 +119,22 @@ class LibraryViewModel @Inject constructor(
         viewMode.value =
             if (viewMode.value == LibraryViewMode.LIST) LibraryViewMode.GRID else LibraryViewMode.LIST
     }
+}
+
+/**
+ * 删除结果事件（IMP-07，[LibraryViewModel.deleteEvents]）。两态均带 [UserMessage]，
+ * UI 统一 `outcome.message.resolve(context)` 出 Toast（避免在 Composable 内直接 context.getString
+ * 触发 lint `LocalContextGetResourceValueCall`，与 importEvents 的 Failed 分支同范式）。
+ *
+ * - [Deleted]：删除成功（文案含书名「已删除《{title}」」）。
+ * - [Failed]：DB 删除抛异常（文件清理失败已在 [BookRepository.deleteBook] 吞掉，不会走到这里）。
+ */
+sealed interface DeleteOutcome {
+    /** 统一消息出口，UI 直接 outcome.message.resolve(context) 出 Toast。 */
+    val message: UserMessage
+
+    data class Deleted(override val message: UserMessage) : DeleteOutcome
+    data class Failed(override val message: UserMessage) : DeleteOutcome
 }
 
 /**

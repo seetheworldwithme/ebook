@@ -4,6 +4,7 @@
     <!-- Common -->
     <string name="common_follow_system">Follow system</string>
     <string name="common_selected">Selected</string>
+    <string name="common_cancel">Cancel</string>
 
     <!-- Library (LIB) -->
     <string name="library_title">Library</string>
@@ -23,6 +24,11 @@
     <string name="library_empty_recent">No recently read books</string>
     <string name="library_empty_all">No books yet — import one to start</string>
     <string name="library_unread">Unread</string>
+    <string name="library_delete">Delete book</string>
+    <string name="library_delete_confirm">This will permanently delete \"%1$s\" and its reading progress, bookmarks, and notes. This cannot be undone.</string>
+    <string name="library_delete_success">Deleted \"%1$s\"</string>
+    <string name="library_delete_failed">Delete failed: %1$s</string>
+    <string name="library_delete_long_click">Delete</string>
 
     <!-- Book detail (LIB-04) -->
     <string name="detail_title_default">Book details</string>

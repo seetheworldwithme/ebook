@@ -6,6 +6,7 @@ import com.xuziyue.ebook.data.db.toEntity
 import com.xuziyue.ebook.model.Book
 import com.xuziyue.ebook.model.LibraryItem
 import com.xuziyue.ebook.model.ReadingStatus
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -47,4 +48,19 @@ class BookRepository(private val dao: BookDao) {
 
     suspend fun updateStatus(bookId: String, status: ReadingStatus) =
         dao.updateStatus(bookId, status)
+
+    /**
+     * 删除一本书（IMP-07 首刀：直接删 DB + 文件副本）。
+     *
+     * 顺序：**先 DB 后文件**——先 [BookDao.deleteById]（ForeignKey CASCADE 自动连带删
+     * reading_progress / bookmarks / annotations，一步清子表），再 best-effort 删书源文件 + 封面。
+     * 这样保证「DB 不留孤儿记录」（红线 #4 精神）；文件删除失败不回滚 DB（孤儿文件无害、
+     * 不阻塞删书），仅吞异常——本地优先 app 下文件副本在私有目录、重导有 contentHash 去重。
+     * 无需 Context：[Book.filePath] / [Book.coverPath] 均绝对路径。
+     */
+    suspend fun deleteBook(book: Book) {
+        dao.deleteById(book.id)
+        runCatching { File(book.filePath).delete() }
+        book.coverPath?.let { runCatching { File(it).delete() } }
+    }
 }
