@@ -143,7 +143,7 @@
 | REL-04 | ✅ | 导入恶意压缩包 / 损坏 / 超大 / 空间不足场景不崩溃、不产生半成品 |
 | REL-05 | ✅ | 达到已固化基线设备上的启动、首开、内存指标 |
 | REL-06 | ⬜ | TalkBack 能完成「导入一本书 → 开始阅读 → 添加书签 → 回到书库」 |
-| REL-07 | ⬜ | 第三方依赖许可证、隐私清单、数据安全声明完成审核 |
+| REL-07 | ✅ | 第三方依赖许可证、隐私清单、数据安全声明完成审核 |
 
 ---
 
@@ -166,6 +166,23 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-13）：**REL-07 真机回归（vivo V2329A）全过 🚧→✅。** 发布门槛 7 项已完成 **6 项**（REL-01/02/03/04/05/07 ✅），仅剩 REL-06（TalkBack）。`./gradlew :app:installDebug` 装最新 build → 书库齿轮→设置→开源许可证页 adb 全自动验证。
+> **① 扩展后 26 条清单全渲染**：滚动收集全量条目，库名 + 版本 + 「（传递依赖）」标记齐全——本次新增的 jsoup 1.22.2 / PdfiumAndroid 1.9.8 / Accompanist 0.37.3 / AppCompat 1.7.1 / Media3 1.10.0 / Guava 33.3.1 / Okio 3.17.0 七条传递依赖均在列，标记正确。
+> **② jsoup → MIT License 展开**（关键新增）：点击 jsoup 条目展开，MIT 全文（`Permission is hereby granted…` + jsoup 版权）monospace 渲染 + `https://jsoup.org/` URL——证明新增 `assets/legal/mit.txt` 真机可读（REL-07 最关键的新许可证族披露）。截图留证。
+> **③ 三族非 Apache 许可证真机确认**：jsoup→MIT License / desugar_jdk_libs→`GNU GPL v2 with Classpath Exception` / Readium→`BSD 3-Clause "New" or "Revised" License`（截图视觉确认，列表底部子行 uiautomator dump 有裁剪但视觉渲染正确）。
+> **④ 全程无崩溃**：当前 PID 全程稳定；licenses 页是纯 LazyColumn + asset 读取，零 Room/网络调用。
+> **⑤ 发现并查清一条历史 crash（非 REL-07、非生产 bug）**：crash buffer 有一条 `SQLiteConstraintException: FOREIGN KEY constraint failed` @ `ReadingProgressDao.upsert`（10:34:39 / PID 28761）。logcat 上下文揭示根因——**今天更早一次会话在 10:30 做 REL-05 性能测试清理**（`run-as sqlite3 "DELETE FROM reading_progress WHERE bookId NOT IN (SELECT id FROM books)"` + `rm -f perf-10mb.epub perf-30mb.epub perf-large.txt` 等手动 DB/文件外科手术），**绕过 Room 直接 rm 删书文件 + sqlite3 删行**，撞上当时正持有 reader 打开的 app，READ-08 防抖保存触发 upsert 而该书 `books` 行已被手动删除 → FK 失败崩。**早于本次会话 ~14 分钟（PID 28761 ≠ 本次 PID 15469）**；正常用户流不可能产生（删书走 Room CASCADE、app 不持有已删书引用）。**当前 DB 已干净**：6 books / 6 progress / **0 孤儿**，`PRAGMA foreign_key_check` 无违反，书库为徐先生真实数据无测试残留。结论：测试污染的一次性事件，不需修代码；但提醒——**真机 DB 维护应走 app 内删书，勿 run-as 直接 sqlite3/rm 改库**。
+
+> 实现状态（2026-08-13）：**REL-07 许可证 / 隐私 / 数据安全审核 ⬜→🚧（审核三项全过，待真机确认许可证页扩展清单转 ✅）。** 发布门槛 7 项已完成 5 项（REL-01/02/03/04/05 ✅）+ 1 🚧（REL-07），剩余 REL-06（TalkBack）。审核证据见 `docs/REL-07-许可证隐私数据安全审核.md`。
+> **审核方法**：`./gradlew :app:dependencies --configuration releaseRuntimeClasspath` 拿真实运行时依赖树（去重 `group:name` **234** 个构件），逐一核对许可证类型，与 SET-05 首版手写清单（19 条）交叉比对。
+> **关键缺口修复（许可证）**：① **jsoup 1.22.2（MIT）漏披露**——Readium `readium-shared` 传递依赖，MIT 是**新许可证族**（既有 Apache/BSD/GPL-CPE 不覆盖），必须独立披露全文。新增 `License.MIT` 枚举 + `assets/legal/mit.txt`（jsoup 版权）+ LicenseData 条目。② **PdfiumAndroid 1.9.8 单列**（红线 #7 / design §10 点名的原生 JNI 库，原清单仅有上层 AndroidPdfViewer）。③ **实质性传递依赖补登**（均 Apache 2.0，覆盖红线 #7）：Media3/ExoPlayer 1.10.0 / Guava 33.3.1 / Okio 3.17.0 / Accompanist 0.37.3 / AppCompat 1.7.1。清单 19 → **26 条**。
+> **许可证兼容性结论**：运行时无 LGPL/AGPL/GPL（无例外）强 copyleft；Apache 2.0（绝大多数）+ BSD-3（Readium）+ MIT（jsoup）均宽松；desugar_jdk_libs GPL v2 **+ Classpath Exception** 允许作库链接不传染（Google 官方正是为此用途采用）→ **无许可证冲突**。AndroidX 同族子模块（annotation/collection/savedstate/… 数十个）+ Kotlin stdlib 按家族归并；de-minimis 注解桥接库（jsr305/jspecify/javax.inject/listenablefuture 空桩）在审核文档登记、不入 App 清单。
+> **隐私清单**：数据 / 权限 / 网络 / 日志脱敏 / 用户控制五项齐——源码 Manifest 零权限、合并后仅 `ACCESS_NETWORK_STATE`+`WAKE_LOCK`（**无 INTERNET**，套接字打不开，`OfflineGuaranteeTest` 断言固化）；零上传、零 SDK 上报；崩溃日志默认关 + `sanitize()` 脱敏（`CrashLogSanitizerTest` 8 项固化）；`ReadingProgress.deviceId` 为 P2 同步预留、MVP 不生成不读取。
+> **数据安全声明**：Data safety 表（零采集 / 仅本地处理 / 无传输 / 可删除 / 崩溃默认关 / 不面向儿童）+ 声明正文（本地优先离线阅读器，不上传不共享，可随时清除）。按决策 #5 暂不上架，本声明为内部审核产物。
+> **防回退**：新增 `LicenseDataAuditTest` 5 项——① 每个 License 全文 asset 真实存在；② 4 族许可证（Apache/BSD/GPL-CPE/MIT）齐全；③ 已识别「必须披露」库（含 jsoup/Media3/PdfiumAndroid 等 27 名片段）必须在 LicenseData；④ 无重名条目；⑤ 每条目版本/主页非空。固化「人工审核结论」，将来谁删披露即红。
+> **测试证据**：`:app:testDebugUnitTest` **174 passed**（0 fail/0 error/0 skip，+5 新增）+ `:app:assembleDebug` + `:app:lintDebug` **BUILD SUCCESSFUL**。
+> **🚧→✅ 收尾**：REL-07 实质审核已完成（文档 + 代码 + 测试齐），转 ✅ 仅需真机确认「设置 → 开源许可证」页渲染扩展后的 26 条（含 jsoup/MIT 展开 + 新传递依赖项）；许可证页渲染/展开逻辑 SET-05（2026-08-12）已真机过，本次仅清单扩充、逻辑零改动，可与 REL-06 TalkBack 同批真机。
 
 > 实现状态（2026-08-13）：**REL-05 性能基线 ⬜→✅（vivo V2329A）。** 发布门槛 7 项已完成 5 项（REL-01/02/03/04/05 ✅），剩余 REL-06（TalkBack）/ REL-07（许可证审核）。基线设备**固化为 vivo V2329A**（Android 16 / API 36 / ~15 GB RAM），全量数据见 `docs/perf/baseline-V2329A-2026-08-12.md` + `.csv`。
 > **门槛三指标全过**：① **冷启动**——1008 本合成书库冷启动至可交互 **P95 1002 ms ≪ 2000 ms**（小书库 976 ms，书数几乎无影响，LazyColumn 只合成可见项 + Room 单查）；② **首开**——10 MB EPUB 恢复阅读 **P95 167 ms ≪ 1500 ms**（9× 余量）；③ **内存**——0.1 MB EPUB → PSS +80 MB、29.9 MB EPUB → +57 MB（文件大 300×，PSS 增量反更小 → **非线性**，渲染基础设施常量开销 ~55–80 MB，不随文件大小线性增长），全程无 OOM。
