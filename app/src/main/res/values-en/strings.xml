@@ -15,7 +15,6 @@
     <string name="library_view_list">List</string>
     <string name="library_import">Import</string>
     <string name="library_search_placeholder">Search title or author</string>
-    <string name="library_sample_alice">Load sample \"Alice\" (EPUB2)</string>
     <string name="library_tab_recent">Recent</string>
     <string name="library_tab_all">All</string>
     <string name="library_tab_finished">Finished</string>
@@ -150,7 +149,6 @@
     <string name="import_success">Import successful</string>
     <string name="import_already_exists">Already in library</string>
     <string name="import_failed">Import failed: %1$s</string>
-    <string name="import_sample_failed">Sample import failed: %1$s</string>
     <string name="import_parse_failed">Unable to parse book</string>
     <string name="import_db_failed">Database write failed: %1$s</string>
     <!-- Import safety (REL-04) -->

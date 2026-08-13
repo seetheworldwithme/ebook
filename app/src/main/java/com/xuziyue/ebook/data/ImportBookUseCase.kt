@@ -46,13 +46,6 @@ class ImportBookUseCase(
         commit(imported.contentHash, imported.file)
     }
 
-    suspend fun importAsset(assetName: String): Outcome = withContext(Dispatchers.IO) {
-        val imported = importer.copyAssetEpub(assetName).getOrElse {
-            return@withContext mapImportError(it, R.string.import_sample_failed)
-        }
-        commit(imported.contentHash, imported.file)
-    }
-
     private suspend fun commit(hash: String, file: File): Outcome {
         // 1. 去重：已入库则复用（文件层 importer 已按 hash 去重）。
         bookRepository.getByContentHash(hash)?.let {

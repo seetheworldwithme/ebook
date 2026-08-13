@@ -176,6 +176,23 @@ class ReaderViewModel @Inject constructor(
     private val _navCommands = Channel<ReaderNavCommand>(Channel.BUFFERED)
     val navCommands: Flow<ReaderNavCommand> = _navCommands.receiveAsFlow()
 
+    /**
+     * 控制栏（顶/底栏）显隐切换信号（READ-02）。
+     *
+     * 方向：ReaderFragment 的 Readium [org.readium.r2.navigator.input.InputListener.onTap]（WebView 层）
+     * → [requestToggleBars] → ReaderScreen collect → 翻转本地 barsVisible。
+     * 为何走通道而非把 barsVisible 存进 VM：barsVisible 留在 Composable 本地（rememberSaveable）
+     * 以保「每次进入先显示一次 + 跨重建保位」（Q7a）；onTap 必须在 WebView 层挂钩——Compose 兄弟节点
+     * 只要挂 pointerInput 就独占手势、挡住 WebView 长按选词（READ-07），不能在 Compose 贴中央 overlay。
+     */
+    private val _barsToggleEvents = Channel<Unit>(Channel.BUFFERED)
+    val barsToggleEvents: Flow<Unit> = _barsToggleEvents.receiveAsFlow()
+
+    /** 由 Readium InputListener.onTap 调用，请求 ReaderScreen 翻转控制栏显隐。 */
+    fun requestToggleBars() {
+        _barsToggleEvents.trySend(Unit)
+    }
+
     // ===== 书内搜索（READ-05：publication.search → SearchIterator 分批 → 上下文 + 跳转）=====
 
     /** 搜索 UI 状态（Idle / Loading / Results / Error）。 */

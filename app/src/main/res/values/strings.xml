@@ -15,7 +15,6 @@
     <string name="library_view_list">列表</string>
     <string name="library_import">导入</string>
     <string name="library_search_placeholder">搜索书名或作者</string>
-    <string name="library_sample_alice">读内置样本 Alice（EPUB2）</string>
     <string name="library_tab_recent">最近阅读</string>
     <string name="library_tab_all">全部</string>
     <string name="library_tab_finished">已读完</string>
@@ -150,7 +149,6 @@
     <string name="import_success">导入成功</string>
     <string name="import_already_exists">已在书库中</string>
     <string name="import_failed">导入失败：%1$s</string>
-    <string name="import_sample_failed">样本导入失败：%1$s</string>
     <string name="import_parse_failed">无法解析书籍</string>
     <string name="import_db_failed">写入数据库失败：%1$s</string>
     <!-- 导入安全（REL-04） -->

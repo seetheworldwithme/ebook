@@ -331,11 +331,6 @@ private fun LibraryScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth().semantics { contentDescription = importProgressText })
             }
 
-            OutlinedButton(
-                onClick = { viewModel.importAsset(ALICE_ASSET) },
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-            ) { Text(stringResource(R.string.library_sample_alice)) }
-
             // 三入口（LIB-02）：最近阅读 / 全部 / 已读完
             PrimaryTabRow(selectedTabIndex = filter.ordinal) {
                 Tab(
@@ -518,6 +513,3 @@ private fun LibraryGridCard(item: LibraryItem, onClick: () -> Unit) {
         )
     }
 }
-
-/** assets 中的 Alice 样本路径。 */
-private const val ALICE_ASSET = "samples/alice-in-wonderland.epub"

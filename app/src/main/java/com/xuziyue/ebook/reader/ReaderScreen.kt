@@ -8,6 +8,11 @@ import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -239,6 +245,15 @@ fun ReaderScreen(
     var editingAnnotation by remember { mutableStateOf<AnnotationItem?>(null) }
     var showExportFormat by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    // READ-02：顶/底控制栏显隐——默认显示一次（用户进入即见，便于看标题/进度）。
+    // 切换由 Readium InputListener.onTap（WebView 层，见 ReaderFragment）经 VM 桥接回这里翻转；
+    // 滚动模式栏常驻（controlsVisible 恒 true）。rememberSaveable 跨横竖屏/暗色保位，导航重进重置默认。
+    var barsVisible by rememberSaveable { mutableStateOf(true) }
+    // READ-02：onTap 经 VM 桥接——必须挂 WebView 层，不能在 Compose 贴中央 overlay
+    // （Compose 兄弟节点挂 pointerInput 会独占手势、挡住 WebView 长按选词 READ-07）。
+    LaunchedEffect(Unit) {
+        viewModel.barsToggleEvents.collect { barsVisible = !barsVisible }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 核心：Compose 托管 ReaderFragment（内部 childFragmentManager 托管 EpubNavigatorFragment）
@@ -278,35 +293,50 @@ fun ReaderScreen(
             )
         }
 
+        // 滚动模式无中央切换区（中间留给 WebView 选词/链接），控制栏常驻；分页模式跟随 barsVisible。
+        val controlsVisible = typography.scroll == ReaderScrollMode.SCROLL || barsVisible
+
         // 顶部控制条（READ-02：目录 / 返回上一位置 / 进度入口；READ-06：书签 toggle）
-        ReaderTopBar(
-            progressText = progressText,
-            canGoBack = canGoBack,
-            isBookmarked = isBookmarked,
-            canBookmark = capabilities.canBookmark,
-            canSearch = capabilities.canSearch,
-            onBack = onBack,
-            onOpenToc = { showToc = true },
-            onOpenSearch = { showSearch = true },
-            onGoBack = { viewModel.goBack() },
-            onToggleBookmark = { viewModel.toggleBookmark() },
-            onOpenProgress = { showProgress = true },
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter),
-        )
+        ) {
+            ReaderTopBar(
+                progressText = progressText,
+                canGoBack = canGoBack,
+                isBookmarked = isBookmarked,
+                canBookmark = capabilities.canBookmark,
+                canSearch = capabilities.canSearch,
+                onBack = onBack,
+                onOpenToc = { showToc = true },
+                onOpenSearch = { showSearch = true },
+                onGoBack = { viewModel.goBack() },
+                onToggleBookmark = { viewModel.toggleBookmark() },
+                onOpenProgress = { showProgress = true },
+            )
+        }
 
         // 底部控制条
-        ReaderBottomBar(
-            onFontDecrease = { viewModel.changeFontSize(-0.1) },
-            onFontIncrease = { viewModel.changeFontSize(0.1) },
-            onOpenTypography = { showTypography = true },
-            onOpenBookmarks = { showBookmarks = true },
-            onOpenAnnotations = { showAnnotations = true },
-            bookmarkCount = bookmarks.size,
-            annotationCount = annotations.size,
-            canBookmark = capabilities.canBookmark,
-            canHighlight = capabilities.canHighlight,
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        ) {
+            ReaderBottomBar(
+                onFontDecrease = { viewModel.changeFontSize(-0.1) },
+                onFontIncrease = { viewModel.changeFontSize(0.1) },
+                onOpenTypography = { showTypography = true },
+                onOpenBookmarks = { showBookmarks = true },
+                onOpenAnnotations = { showAnnotations = true },
+                bookmarkCount = bookmarks.size,
+                annotationCount = annotations.size,
+                canBookmark = capabilities.canBookmark,
+                canHighlight = capabilities.canHighlight,
+            )
+        }
 
         // 排版面板（TYPE-01 字号/行高/段距/页边距/对齐/字体 + TYPE-02 主题含跟随系统
         // + TYPE-03 亮度/常亮/方向显示设置）

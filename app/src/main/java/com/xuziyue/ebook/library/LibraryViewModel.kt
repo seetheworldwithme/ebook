@@ -87,16 +87,6 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** 导入 assets 内置样本（IMP-01 样本按钮）。 */
-    fun importAsset(assetName: String) {
-        viewModelScope.launch {
-            importing.value = true
-            val outcome = importBookUseCase.importAsset(assetName)
-            importing.value = false
-            _importEvents.send(outcome)
-        }
-    }
-
     fun setQuery(value: String) { query.value = value }
     fun setFilter(value: LibraryFilter) { filter.value = value }
     fun setSort(value: LibrarySort) { sort.value = value }

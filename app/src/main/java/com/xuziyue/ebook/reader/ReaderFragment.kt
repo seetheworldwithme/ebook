@@ -27,6 +27,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.navigator.input.InputListener
+import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.services.locateProgression
 import timber.log.Timber
@@ -56,6 +58,17 @@ class ReaderFragment : Fragment() {
 
     // READ-03：音量键翻页开关（collect viewModel.volumeKeyPaging 后更新，默认开）。interceptor 读它决定是否消费。
     private var volumeKeyPaging = true
+
+    // READ-02：控制栏显隐切换——onTap 在 WebView 层触发（只对中央 60%：左右各 20% 被 Compose 翻页 overlay
+    // 吃掉，到不了 WebView）。请求 VM 翻转 barsVisible。长按选词是 WebView 另一条路（onSelectionStart），
+    // onTap 不挡——这是把切换从 Compose overlay 挪到这里的根因（Compose 兄弟挂 pointerInput 会吞长按）。
+    @OptIn(ExperimentalReadiumApi::class)
+    private val barsToggleInputListener = object : InputListener {
+        override fun onTap(event: TapEvent): Boolean {
+            viewModel.requestToggleBars()
+            return false // 不消费：轻点正文无副作用，内部/外部链接由 HyperlinkNavigator 另行处理不受影响
+        }
+    }
 
     // READ-03：Window.Callback 原始引用（onResume 包装拦截音量键，onPause 还原）。
     private var originalWindowCallback: Window.Callback? = null
@@ -143,9 +156,11 @@ class ReaderFragment : Fragment() {
         bindNavigatorObservers(state.bookId)
     }
 
+    @OptIn(ExperimentalReadiumApi::class)
     private fun removeExistingNavigator() {
         navigatorBindingJob?.cancel()
         navigatorBindingJob = null
+        navigator?.removeInputListener(barsToggleInputListener)
         childFragmentManager.findFragmentByTag(NAV_TAG)?.let {
             childFragmentManager.commitNow { remove(it) }
         }
@@ -156,6 +171,9 @@ class ReaderFragment : Fragment() {
     @OptIn(ExperimentalReadiumApi::class)
     private fun bindNavigatorObservers(bookId: String) {
         val nav = navigator ?: return
+        // READ-02：注册控制栏切换监听（先移除再加，旋转重绑同一 navigator 时幂等，不重复触发）。
+        nav.removeInputListener(barsToggleInputListener)
+        nav.addInputListener(barsToggleInputListener)
         navigatorBindingJob?.cancel()
         navigatorBindingJob = viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {

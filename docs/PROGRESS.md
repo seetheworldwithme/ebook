@@ -167,6 +167,21 @@
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
 
+> 实现状态（2026-08-13）：**移除书库首页「读内置样本 Alice（EPUB2）」按钮（清理，非需求项）。** 徐先生确认不再需要——书库已有真实书 + SAF/intent 导入全通，样本按钮是 Phase 0 零摩擦验证的遗留。完整删整条死链：`MainActivity` 按钮 + `ALICE_ASSET` 常量 → `LibraryViewModel.importAsset` → `ImportBookUseCase.importAsset` → `BookFileImporter.copyAssetEpub`（KDoc 同步去「两条来源」改「SAF 导入」）→ 字符串 `library_sample_alice` / `import_sample_failed`（zh/en）→ 内置 asset `samples/alice-in-wonderland.epub`（`samples/` 目录随之清空，APK 减重）。无测试依赖（grep 确认零残留引用）。`assembleDebug` + `testDebugUnitTest`（174 passed）+ `lintDebug` 全绿。
+
+> 实现状态（2026-08-13）：**阅读页控制栏（顶栏进度 + 底栏设置）改为默认可隐藏 + 点屏幕中央切换，✅（真机全过：toggle/翻页 adb 自动验 + 徐先生手指确认长按选词高亮已恢复）。** 需求来源：徐先生反馈「顶/底栏一直常驻挡正文，想默认隐藏、点中央出菜单」。经 `/grill-me` 两轮决策树锁定方案。
+> **初版（已废弃）**：在 Compose 层贴中央 60% overlay（`detectTapGestures(onTap)`）做切换——真机一测 **长按选词高亮彻底失效**。根因：Compose **兄弟节点**只要挂 `pointerInput`/`clickable` 就成为命中目标、独占手势，**根本不会**把事件让给下面的 AndroidView（WebView），与原生 View「`onTouch` 返 false 即透传」完全两回事。`detectTapGestures` 语义上「不消费长按」的推断，在 Compose↔AndroidView 兄弟命中下不成立。**徐先生真机发现并报回，纠正了我的误判。**
+> **最终方案**：把切换检测从 Compose overlay 挪到 **Readium `InputListener.onTap`（WebView 层）**。Readium 原生区分 tap（`onTap`）与选词（`R2BasicWebView.onSelectionStart`，长按走另一条路），挂钩 `onTap` 不挡选词；左右各 20% 被 Compose 翻页 overlay 吃掉到不了 WebView，故 `onTap` 天然只对中央 60% 触发。改动 3 文件：① `ReaderFragment` 给 navigator 挂 `InputListener{ onTap → viewModel.requestToggleBars() }`（bindNavigatorObservers 注册、removeExistingNavigator 注销，先 remove 再 add 幂等防旋转重绑重复触发）；② `ReaderViewModel` 加 `barsToggleEvents` 通道 + `requestToggleBars()`（`barsVisible` 留在 Composable 本地 `rememberSaveable` 保 Q7a，onTap 经 VM 桥接回 Compose 翻转）；③ `ReaderScreen` 删 overlay、`LaunchedEffect collect barsToggleEvents` 翻转 `barsVisible`、两栏 `AnimatedVisibility`/滚动常驻逻辑不变。删掉误加的 `reader_toggle_bars` 字符串（zh/en）。
+> **行为规格**：① 初始——每次进入栏先显示一次；② 切换（仅分页模式）——点屏幕中央 60%（经 `onTap`）→ `barsVisible` 取反；③ 滚动模式栏常驻；④ 动画——顶栏下滑入/上滑出、底栏上滑入/下滑出 + 淡入淡出；⑤ `rememberSaveable` 跨横竖屏/暗色保位；⑥ Sheet 打开时其 scrim 盖最上层，点中央落不到 WebView 不误触；⑦ 不碰系统栏（app 栏隐藏后状态栏/导航栏仍在，沉浸式留 P1）。
+> **测试证据**：`:app:assembleDebug` + `:app:testDebugUnitTest`（**174 passed / 0 fail / 0 error / 0 skip**）+ `:app:lintDebug` 均 **BUILD SUCCESSFUL**（experimental API 警告已用 `@OptIn` 清零）。
+> **真机回归（vivo V2329A，adb 全自动，2026-08-13，最终方案）**：① 进入栏默认显示（返回书库/进度/字号 全在）+ **切换 overlay 节点已消失**（`grep 显示或隐藏菜单`=0，挡路 overlay 确认拆除）✅；② adb tap 中央 (540,1200) → 栏隐藏（Readium `onTap` 被 adb tap 正常触发，证明 WebView 收得到 tap）✅；③ 再点 → 栏出现（toggle 双向）✅；④ 藏栏后右边缘 ×4 翻页，栏全程隐藏 + 进度推进（翻页区独立、不误触显隐）✅。
+> **长按选词高亮（READ-07 回归）——✅ 徐先生手指确认恢复**：初版 Compose overlay 挡死选词；最终方案改挂 Readium `InputListener.onTap`（WebView 层），`onTap` 与 `onSelectionStart` 是两条独立路径，选词路径恢复到改动前状态。徐先生真机长按正文，高亮/复制/分享菜单正常回来。注：adb 合成长按驱动不了 WebView 选词（已知限制），故该项只能手指验——已过。
+> **测试副作用披露**：翻页测试改动了《山海經》进度（READ-08 自动保存）；未手动改真机 DB（不做 sqlite3/rm 外科手术），需还原在 app 内翻回。系统设置已复原（font_scale=1.0 / rotation=0/0）。
+> **本轮不做、留 P1（已记入文档）**：
+> 1. **系统栏沉浸式（真·全屏）**——隐藏 app 栏时顺带藏 Android 状态栏/导航栏。现状无任何沉浸式代码（无 `SystemUiController` / `WindowInsetsControllerCompat` / accompanist 依赖），需新写 `LaunchedEffect(barsVisible)` + `WindowInsetsControllerCompat.hide(systemBars)` + `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` + 退出 `DisposableEffect` 恢复 `show(systemBars)`，范围比纯 Compose 显隐大一档，单独立项。
+> 2. **滚动模式的切换入口**——滚动模式中间 60% 留给 WebView 选词/链接，本轮不加切换区（硬盖会拦正文链接/选词）。若滚动模式也要隐藏栏，需另设计入口（如悬浮按钮 / `onTap` 手势区分拖动 vs 轻点），留 P1。
+> 3. **显示后自动收起（超时淡出）**——栏调出后过 N 秒自动淡出。本轮按「点中央才出现 / 再点收起」的显式 toggle，行为简单可预测；自动收起留 P1。
+
 > 实现状态（2026-08-13）：**REL-07 真机回归（vivo V2329A）全过 🚧→✅。** 发布门槛 7 项已完成 **6 项**（REL-01/02/03/04/05/07 ✅），仅剩 REL-06（TalkBack）。`./gradlew :app:installDebug` 装最新 build → 书库齿轮→设置→开源许可证页 adb 全自动验证。
 > **① 扩展后 26 条清单全渲染**：滚动收集全量条目，库名 + 版本 + 「（传递依赖）」标记齐全——本次新增的 jsoup 1.22.2 / PdfiumAndroid 1.9.8 / Accompanist 0.37.3 / AppCompat 1.7.1 / Media3 1.10.0 / Guava 33.3.1 / Okio 3.17.0 七条传递依赖均在列，标记正确。
 > **② jsoup → MIT License 展开**（关键新增）：点击 jsoup 条目展开，MIT 全文（`Permission is hereby granted…` + jsoup 版权）monospace 渲染 + `https://jsoup.org/` URL——证明新增 `assets/legal/mit.txt` 真机可读（REL-07 最关键的新许可证族披露）。截图留证。

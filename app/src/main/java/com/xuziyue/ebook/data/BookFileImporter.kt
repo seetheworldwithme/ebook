@@ -12,11 +12,10 @@ import kotlinx.coroutines.withContext
 /**
  * EPUB / TXT 文件导入器（Phase 0 极简版）。
  *
- * 两条来源，都复制到应用私有目录 `filesDir/books/{contentHash}.{ext}`，原文件被删除 / 移动后仍可读：
- * 1. [importFromUri]：SAF 文件选择器返回的 `content://` Uri（按来源扩展名存 `.txt` / `.epub`）。
- * 2. [copyAssetEpub]：内置 assets 样本（如 Alice），零摩擦验证。
+ * 经 [importFromUri] 从 SAF 文件选择器导入，复制到应用私有目录 `filesDir/books/{contentHash}.{ext}`，
+ * 原文件被删除 / 移动后仍可读（按来源扩展名存 `.txt` / `.epub`）。
  *
- * - 不申请 `MANAGE_EXTERNAL_STORAGE`（CLAUDE.md 红线 #3），只用 SAF / assets。
+ * - 不申请 `MANAGE_EXTERNAL_STORAGE`（CLAUDE.md 红线 #3），只用 SAF。
  * - contentHash 相同（hash 重复）则复用已有文件，不重复占用空间（design.md §6.5 导入去重）。
  * - 复制到临时文件 + 原子重命名；失败删临时文件，不留半成品（CLAUDE.md 红线 #4）。
  *
@@ -42,14 +41,6 @@ class BookFileImporter(private val context: Context) {
                 context.contentResolver.openInputStream(uri)
                     ?: throw java.io.IOException(context.getString(R.string.error_open_file, uri))
             }, ext)
-            ImportedBook(hash, file)
-        }
-    }
-
-    /** 从内置 assets 复制 EPUB 样本（如 Alice），返回 [ImportedBook]。 */
-    suspend fun copyAssetEpub(assetName: String): Result<ImportedBook> = withContext(Dispatchers.IO) {
-        runCatching {
-            val (hash, file) = copyWithHash({ context.assets.open(assetName) }, "epub")
             ImportedBook(hash, file)
         }
     }
