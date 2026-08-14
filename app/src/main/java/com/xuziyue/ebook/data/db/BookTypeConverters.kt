@@ -1,6 +1,7 @@
 package com.xuziyue.ebook.data.db
 
 import androidx.room.TypeConverter
+import com.xuziyue.ebook.model.CollectionKind
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReadingStatus
 import kotlinx.serialization.decodeFromString
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.Json
  * - authors：`List<String>` ↔ JSON 字符串（kotlinx.serialization，domain 保持 List）。
  * - status：[ReadingStatus] ↔ name 字符串（改名安全；反序列化失败兜底 [ReadingStatus.UNREAD]）。
  * - highlightColor：[HighlightColor] ↔ name 字符串（同上范式；失败兜底 [HighlightColor.Default]）。
+ * - collectionKind：[CollectionKind] ↔ name 字符串（LIB-05；失败兜底 [CollectionKind.CUSTOM]，系统书架拒绝改名）。
  */
 class BookTypeConverters {
 
@@ -38,4 +40,11 @@ class BookTypeConverters {
     @TypeConverter
     fun stringToHighlightColor(raw: String): HighlightColor =
         runCatching { HighlightColor.valueOf(raw) }.getOrDefault(HighlightColor.Default)
+
+    @TypeConverter
+    fun collectionKindToString(kind: CollectionKind): String = kind.name
+
+    @TypeConverter
+    fun stringToCollectionKind(raw: String): CollectionKind =
+        runCatching { CollectionKind.valueOf(raw) }.getOrDefault(CollectionKind.CUSTOM)
 }

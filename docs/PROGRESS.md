@@ -19,11 +19,11 @@
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
 | P0（MVP 必做） | 28 | 27 | 1 |
-| P1（首个增强版） | 11 | 3 | 0 |
+| P1（首个增强版） | 11 | 5 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 30 | 1 |
+| 合计 | 42 | 32 | 1 |
 
-> 当前进度：30 ✅ / 1 🚧（SET-02 TalkBack 手指项；DATA-03/04 真机回归全过转 ✅）。详见文末变更记录。
+> 当前进度：32 ✅ / 1 🚧（仅剩 SET-02 TalkBack 手指项；LIB-05/06 真机回归全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -109,8 +109,8 @@
 | --- | --- | --- |
 | IMP-06 | ⬜ | 用户授权指定目录并增量扫描（SAF 目录授权） |
 | IMP-07 | ✅ | 删除书籍时选「仅移除」或「同时删 App 内副本」。首刀（2026-08-13）：首页长按书卡弹确认框直接删（DB+文件一起删，ForeignKey CASCADE 自动清进度/书签/笔记）；经徐先生确认跳过「仅移除/删副本」二选一（私有目录下留孤儿文件无意义、重导有 contentHash 去重）。真机回归（vivo V2329A）全过：长按确认删除（DB-1 + 书源/封面文件删 + 列表消失）、取消防误删、FATAL=0。详见变更记录 |
-| LIB-05 | ⬜ | 收藏、标签、自定义书架 |
-| LIB-06 | ⬜ | 批量选择、移动到书架、删除、重新提取元数据 |
+| LIB-05 | ✅ | 收藏、标签、自定义书架。V1 一刀（2026-08-14）：决策口径——收藏=特殊书架「收藏」(SYSTEM_FAVORITE 固定 id)、标签=书架合一(只 Collection/CollectionBook 一套表)。Room v3→v4 加 collections+collection_books 两表(双向 FK CASCADE)+系统书架迁移时插入+CollectionRepository(clock/idGenerator 注入)+书架 Tab(第4个)+书架列表/书架内浏览+CollectionPickerSheet(多选+内联新建)+详情页 chips+收藏 toggle。**真机回归（vivo V2329A）全过**：迁移 user_version=4 + 系统书架插入 + CASCADE 删书架清关系书不删 + 书架 Tab/列表/新建/重命名/删除 + 详情页 chips + 收藏 toggle(修复图标 tint 后灰↔蓝双向清晰) |
+| LIB-06 | ✅ | 批量选择、移动到书架、删除、重新提取元数据。V1 一刀（2026-08-14）：批量选择/移动到书架/批量删除已完成——长按进入选择模式(combinedClickable 复用 IMP-07)+上下文操作栏(全选/加入书架/删除/取消)+批量加入(DAO IGNORE 幂等)+批量删除(汇总成功数)。**重新提取元数据推后单独处理**(依赖读源文件重跑 ExtractUseCase，与书架正交)。**真机回归（vivo V2329A）全过**：长按进批量模式 + 选多本 + 加入书架书架内可见 + 批量删除确认+汇总 |
 | READ-09 | ⬜ | 历史位置前进 / 后退、脚注弹层、外链确认 |
 | READ-10 | ⬜ | TTS 朗读（播放/暂停/调速/选声/定时，音频焦点抢占正确暂停） |
 | TYPE-05 | ⬜ | 自定义字体导入、按书保存排版偏好 |
@@ -166,6 +166,17 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-14）：**LIB-05/06 书架 + 批量操作真机回归（vivo V2329A）全过 🚧→✅。P1 进度 3✅→5✅（IMP-07 + DATA-03 + DATA-04 + LIB-05 + LIB-06），合计 32✅ / 1🚧（仅剩 SET-02 TalkBack 手指项）。** adb 客观验证 + 徐先生手指混合。徐先生拍板的产品口径：**收藏=特殊书架「收藏」**（SYSTEM_FAVORITE 固定 id，迁移时自动插入，不可删不可改名）；**标签=书架合一**（「书架/标签/合集」本质都是「一本书属于多个分组」，只用 Collection/CollectionBook 一套表，UI 叫「书架」）；LIB-05+06 全做，仅「重新提取元数据」(LIB-06 子项)推后单独处理。
+> **数据层（Room v3→v4，红线 #6）**：① 新增 `CollectionEntity`(id/name/sortOrder/createdAt/kind) + `CollectionBookEntity`(collectionId+bookId 联合主键，**双向 FK CASCADE**：删书架清关系不删书、删书清关系) + `CollectionKind` enum(SYSTEM_FAVORITE/CUSTOM，TypeConverter 复用 books.status 范式)。② `MIGRATION_3_4` SQL 逐字取自生成的 `4.json`（保证约束名/列序一致）+ **迁移末尾 INSERT 系统书架「收藏」**(sortOrder=Long.MIN_VALUE 排最前，保证老用户升级后立即可用)。③ `CollectionDao`(observeAllWithCounts LEFT JOIN 聚合 bookCount / upsert 备份恢复用) + `CollectionBookDao`(observeBooksInCollection JOIN books+进度 / collectionIdsForBook 收藏判断)。④ `CollectionRepository`(clock/idGenerator 注入沿用 BookmarkRepository 范式 / toggleBookInCollection / toggleFavorite 系统书架快捷操作 / addBooksToCollection 批量 / ensureMutable 系统书架拒删拒改名)。
+> **UI（LIB-05）**：① 书库 `PrimaryTabRow` 加第 4 个 Tab「书架」(LibraryFilter.SHELVES)；Tab=书架时分两视图——`selectedCollectionId==null` 显示书架列表(每行书架名+书数+进入箭头+顶部新建书架+长按重命名/删除)；非 null 显示书架内书籍(顶部返回书架列表)。② `CollectionPickerSheet`(ModalBottomSheet 共享组件，多选勾选+内联新建书架，批量模式与详情页单本共用)。③ 详情页加「书架·标签」区块(AssistChip chips 展示本书所属书架+点 chip 移除+加入入口)+顶栏收藏 toggle(实心/空心星标)+单本删除按钮(IMP-07 入口从书库长按迁移到详情页)。
+> **批量操作（LIB-06）**：复用 IMP-07 长按手势但语义改为**进入批量选择模式**(LibraryViewModel selectionMode/selectedIds StateFlow)——长按书卡进入选择模式(seed 当前书)，进入后单击切选中态(非开书)，选中态视觉(列表 primaryContainer 背景/网格 primary 边框，不靠颜色复用 SET-02 范式)+顶部上下文操作栏(已选 N/全选/加入书架/删除/取消)；批量加入书架(DAO IGNORE 幂等)；批量删除(复用 BookRepository.deleteBook 遍历汇总成功数)。
+> **备份/恢复适配（DATA-03）**：BackupDtos 加 CollectionRow/CollectionBookRow(默认空向后兼容旧备份)；BackupUseCase 导出两表；RestoreUseCase 恢复时 collections upsert(系统书架确保存在)+collection_books 按 bookIdMap 重映射(backup bookId→本地实际 bookId，孤儿关系跳过)。
+> **测试（TDD +38 新增/改写，全绿）**：CollectionDaoTest 6(CRUD/bookCount 聚合/排序/upsert 覆盖/删书架 CASCADE/TypeConverter 往返) + CollectionBookDaoTest 5(联合主键 IGNORE 去重/JOIN 查询/搜索/双向 CASCADE/remove) + CollectionRepositoryTest 7(toggleFavorite 系统书架/系统书架拒删拒改名 assertThrows/批量幂等/clock+idGenerator 注入) + 迁移测试 v3→v4 双覆盖(Robolectric `v3升v4不丢数据且建出collections collection_books表且系统书架已插入且CASCADE生效` + 仪器 `migrate3To4_保数据_建书架表_系统书架已插_schema与4json一致` runMigrationsAndValidate) + SchemaExportedTest v4 断言(7 表)。既有迁移测试补全迁移链(1→2→3→4 / 2→3→4，MEMORY [[room-migration-test-full-chain]] 坑)。
+> **测试证据**：`:app:testDebugUnitTest` **249 passed**（0 fail/0 error/0 skip，+18 新增 collection 测试 + 迁移测试改写）+ `:app:assembleDebug` + `:app:lintDebug`（0 error）+ `:app:assembleDebugAndroidTest` **BUILD SUCCESSFUL**（仪器迁移测试 migrate3To4 编译过待真机）。
+> **🚧→✅ 收尾（真机回归全过，vivo V2329A）**：① [adb] v3→v4 迁移 `user_version=4` + collections/collection_books 表结构与 4.json 逐字段一致 + 旧数据不丢(books=1/progress=1) + 系统书架「收藏」已插(`system-favorite|收藏|SYSTEM_FAVORITE`)；② [adb] 双向 FK CASCADE——插测试关系后删 test-shelf → collection_books COUNT→0 + 书不删(测后清理)；③ [adb] 第 4 个 Tab「书架」渲染 + 书架列表(收藏/空书架文案/新建书架按钮)；④ [徐先生手指] 书架 Tab 新建/重命名/删除(收藏不可删)；⑤ [徐先生手指] 长按进批量模式+选多本+加入书架+书架内可见；⑥ [徐先生手指] 批量删除确认+汇总 Toast；⑦ [徐先生手指] 详情页 chips+收藏 toggle；⑧ [徐先生手指] 其余书架 CRUD/批量操作均过。本刀时间窗 logcat **零 FATAL**。
+> **收藏按钮修复（真机首验抓到）**：徐先生报「详情页收藏按钮一直实心不切换」——经 adb 诊断定位：**逻辑层全对**（DB system-favorite 关系增删正确、Flow combine 每次 toggle 都 emit 正确 isFavorite、contentDescription 正确翻转），问题只在**图标视觉**——`Icons.Outlined.Star`(未收藏) 与 `Icons.Filled.Star`(已收藏) 在 24dp 小尺寸下几乎不可辨（Material Outlined Star 轮廓粗看着像实心）。修复：收藏态不靠图标外形，改用 **tint 颜色**区分——已收藏=`colorScheme.primary`(蓝/强调色)、未收藏=`onSurfaceVariant`(中性灰)。真机图像分析确认：灰↔蓝 双向切换清晰可辨，DB 同步正确。已记 MEMORY [[toggle-state-not-just-icon-shape]]（toggle 视觉态别只靠 Filled/Outlined 图标外形，必须加 tint）。
+> **踩坑**：① **core:model 新增 `Collection` 类与 `kotlin.collections.Collection<T>` 同名**——方法签名 `Collection<String>` 被误解析成 domain 类报 `No type arguments expected`，改用 `Iterable<String>` 解（已记 MEMORY [[domain-collection-name-clash]]）；② **KDoc 注释漏 `*/` 让整个类被吞进注释**——KSP 报 `[MissingType]: Element 'BookDatabase' references a type that is not present`(被吞的是 @TypeConverters 引用的 BookTypeConverters)，排查时以为是跨模块类型缺失走了弯路，根因是 BookTypeConverters 注释闭合丢失（同条 MEMORY）；③ Compose lambda 内不能调 `stringResource`(非 Composable 上下文)，收藏书架名预解析提到作用域顶部；④ `@OptIn(ExperimentalMaterial3Api)` / `ExperimentalLayoutApi`(FlowRow)；⑤ **收藏 toggle 图标外形不可辨**（见上「收藏按钮修复」，已记 MEMORY [[toggle-state-not-just-icon-shape]]）；⑥ vivo logcat 默认不输出 `Log.d`(D 级被系统过滤)，调试须用 `Log.i`(I 级)才能抓到。
 
 > 实现状态（2026-08-14）：**DATA-03/04 真机回归（vivo V2329A）全过 🚧→✅。P1 进度 1✅→3✅（IMP-07 + DATA-03 + DATA-04），合计 30✅ / 1🚧（仅剩 SET-02 TalkBack 手指项）。** 徐先生手指操作 + adb 客观验证混合。
 > **adb 自动验证**：① v2→v3 迁移——`user_version=3` + `reading_sessions` 表建出 + books/progress=1 不丢；② `connectedDebugAndroidTest` **5 项全过**（含 `migrate2To3_保数据_建readingSessions_schema与3json一致` 真机 schema 精确校验 + TYPE-04 三样本开书回归）；③ 计时闭环——打开《万相之王》停留 12s 退出，reading_sessions +1 条 `activeSeconds=9`；④ 详情页第6区块「阅读统计/总时长/今日」渲染 + 时长格式化（不足1分钟）正确；⑤ 统计页「今日阅读/本周阅读/连续阅读1天/最近7天柱状（8/8~8/14日期标签）」齐全；⑥ 设置页「阅读统计」+「备份与恢复」两导航行；⑦ 备份导出——SAF CreateDocument 弹出 + 保存生成 `ebook-backup-20260814.zip`（4.86MB）+ pull 解压验结构（backup.json `schemaVersion=1` + `books/{bookId}.txt` 10.25MB 书源 + 全表导出 books=1/progress=1/sessions=1 + settings 5 key 含 `app_reading_stats_enabled`/`scroll`/`theme`/`volume_key_paging`/`font_size`）；⑧ 本刀时间窗（15:00 后）logcat **零 FATAL**。

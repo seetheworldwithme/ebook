@@ -1,6 +1,8 @@
 package com.xuziyue.ebook.data.db
 
 import com.xuziyue.ebook.model.Book
+import com.xuziyue.ebook.model.Collection
+import com.xuziyue.ebook.model.CollectionKind
 import com.xuziyue.ebook.model.LibraryItem
 
 /**
@@ -46,4 +48,13 @@ fun Book.toEntity(): BookEntity = BookEntity(
 fun LibraryItemEntity.toDomain(): LibraryItem = LibraryItem(
     book = book.toDomain(),
     progression = progression,
+)
+
+/** [CollectionWithCountEntity] → domain [Collection]（书架 Tab 列表查询结果，LIB-05）。 */
+fun CollectionWithCountEntity.toDomain(): Collection = Collection(
+    id = id,
+    name = name,
+    sortOrder = sortOrder,
+    kind = runCatching { CollectionKind.valueOf(kind) }.getOrDefault(CollectionKind.CUSTOM),
+    bookCount = bookCount,
 )

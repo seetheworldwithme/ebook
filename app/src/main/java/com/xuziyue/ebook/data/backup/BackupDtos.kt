@@ -31,6 +31,8 @@ data class BackupDto(
     val bookmarks: List<BookmarkRow>,
     val annotations: List<AnnotationRow>,
     val readingSessions: List<SessionRow>,
+    val collections: List<CollectionRow> = emptyList(),
+    val collectionBooks: List<CollectionBookRow> = emptyList(),
     val settings: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -90,6 +92,22 @@ data class SessionRow(
     val startedAt: Long,
     val endedAt: Long,
     val activeSeconds: Long,
+)
+
+@Serializable
+data class CollectionRow(
+    val id: String,
+    val name: String,
+    val sortOrder: Long,
+    val createdAt: Long,
+    val kind: String, // CollectionKind.name（SYSTEM_FAVORITE / CUSTOM）
+)
+
+@Serializable
+data class CollectionBookRow(
+    val collectionId: String,
+    val bookId: String,
+    val addedAt: Long,
 )
 
 /** 备份文件结构版本（独立于数据库 migration 版本与 PersistedLocator schema 版本）。 */

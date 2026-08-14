@@ -6,6 +6,7 @@ import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.AppSettingsRepository
 import com.xuziyue.ebook.data.BookFileImporter
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.CollectionRepository
 import com.xuziyue.ebook.data.EpubSecurityValidator
 import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ImportBookUseCase
@@ -16,8 +17,11 @@ import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookDatabase
 import com.xuziyue.ebook.data.db.MIGRATION_1_2
 import com.xuziyue.ebook.data.db.MIGRATION_2_3
+import com.xuziyue.ebook.data.db.MIGRATION_3_4
 import com.xuziyue.ebook.data.db.AnnotationDao
 import com.xuziyue.ebook.data.db.BookmarkDao
+import com.xuziyue.ebook.data.db.CollectionBookDao
+import com.xuziyue.ebook.data.db.CollectionDao
 import com.xuziyue.ebook.data.db.ReadingProgressDao
 import com.xuziyue.ebook.data.db.ReadingSessionDao
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
@@ -41,7 +45,7 @@ object DatabaseModule {
     @Singleton
     fun provideBookDatabase(@ApplicationContext context: Context): BookDatabase =
         Room.databaseBuilder(context, BookDatabase::class.java, BookDatabase.DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3) // v1→v2→v3（红线 #6，不破坏性重建）
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4) // v1→v2→v3→v4（红线 #6，不破坏性重建）
             .build()
 
     @Provides
@@ -60,6 +64,12 @@ object DatabaseModule {
     fun provideReadingSessionDao(db: BookDatabase): ReadingSessionDao = db.readingSessionDao()
 
     @Provides
+    fun provideCollectionDao(db: BookDatabase): CollectionDao = db.collectionDao()
+
+    @Provides
+    fun provideCollectionBookDao(db: BookDatabase): CollectionBookDao = db.collectionBookDao()
+
+    @Provides
     @Singleton
     fun provideBookRepository(dao: BookDao): BookRepository = BookRepository(dao)
 
@@ -76,6 +86,14 @@ object DatabaseModule {
     @Singleton
     fun provideAnnotationRepository(dao: AnnotationDao): AnnotationRepository =
         AnnotationRepository(dao)
+
+    @Provides
+    @Singleton
+    fun provideCollectionRepository(
+        collectionDao: CollectionDao,
+        collectionBookDao: CollectionBookDao,
+        bookDao: BookDao,
+    ): CollectionRepository = CollectionRepository(collectionDao, collectionBookDao, bookDao)
 
     @Provides
     @Singleton
@@ -116,11 +134,13 @@ object DatabaseModule {
         bookmarkDao: BookmarkDao,
         annotationDao: AnnotationDao,
         sessionDao: ReadingSessionDao,
+        collectionDao: CollectionDao,
+        collectionBookDao: CollectionBookDao,
         dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
         @ApplicationContext context: Context,
     ): com.xuziyue.ebook.data.backup.BackupUseCase =
         com.xuziyue.ebook.data.backup.BackupUseCase(
-            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, dataStore, context,
+            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, dataStore, context,
         )
 
     @Provides
@@ -131,10 +151,12 @@ object DatabaseModule {
         bookmarkDao: BookmarkDao,
         annotationDao: AnnotationDao,
         sessionDao: ReadingSessionDao,
+        collectionDao: CollectionDao,
+        collectionBookDao: CollectionBookDao,
         dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
         @ApplicationContext context: Context,
     ): com.xuziyue.ebook.data.backup.RestoreUseCase =
         com.xuziyue.ebook.data.backup.RestoreUseCase(
-            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, dataStore, context,
+            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, dataStore, context,
         )
 }

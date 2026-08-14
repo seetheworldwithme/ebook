@@ -36,6 +36,14 @@ class SchemaExportedTest {
         assertTrue("缺少 reading_sessions 表（DATA-04）", names.contains("reading_sessions"))
     }
 
+    @Test
+    fun `schema 4 json 已导出且含 collections 与 collection_books 实体`() {
+        val names = tableNames("com.xuziyue.ebook.data.db.BookDatabase/4.json")
+        assertEquals(7, names.size) // 五表 + collections + collection_books
+        assertTrue("缺少 collections 表（LIB-05）", names.contains("collections"))
+        assertTrue("缺少 collection_books 表（LIB-05）", names.contains("collection_books"))
+    }
+
     private fun tableNames(path: String): List<String> {
         // sourceSets.test.resources.srcDir(schemas) 把 schemas 内容映射到 classpath 根，故路径去掉 schemas/ 前缀。
         val json = javaClass.classLoader!!.getResourceAsStream(path)

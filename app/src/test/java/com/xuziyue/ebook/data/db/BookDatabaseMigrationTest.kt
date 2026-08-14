@@ -4,7 +4,9 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.xuziyue.ebook.model.CollectionKind
 import com.xuziyue.ebook.model.HighlightColor
+import com.xuziyue.ebook.model.SYSTEM_FAVORITE_ID
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -62,9 +64,9 @@ class BookDatabaseMigrationTest {
             db.version = 1
         }
 
-        // 2. Room 打开（触发迁移 + schema 校验）。起点 v1 文件，当前 Room 期望 v3，故需完整迁移链 1→2→3。
+        // 2. Room 打开（触发迁移 + schema 校验）。起点 v1 文件，当前 Room 期望 v4，故需完整迁移链 1→2→3→4。
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
 
@@ -120,9 +122,9 @@ class BookDatabaseMigrationTest {
             db.version = 2
         }
 
-        // 2. Room 打开（触发 v2→v3 迁移 + schema 校验；MIGRATION_2_3 的 SQL 若与 Room 期望不符会在此抛异常）
+        // 2. Room 打开（触发迁移 + schema 校验）。起点 v2，当前期望 v4，需迁移链 2→3→4。
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
 
@@ -139,6 +141,61 @@ class BookDatabaseMigrationTest {
         // 5. ForeignKey CASCADE 在迁移后的库仍生效（删书连带删会话）
         db.bookDao().deleteById("b2")
         assertEquals(0L, db.readingSessionDao().totalActiveSecondsForBook("b2"))
+
+        db.close()
+    }
+
+    @Test
+    fun `v3 升 v4 不丢数据且建出 collections collection_books 表且系统书架已插入且 CASCADE 生效`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.cacheDir, "migration-v4-test.db").also { it.delete() }
+        dbFile = file
+
+        // 1. 造 v3 库（books + progress + bookmarks + annotations + sessions）并种数据
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            db.execSQL(V1_BOOKS_SQL)
+            db.execSQL(V1_BOOKS_CONTENTHASH_INDEX_SQL)
+            db.execSQL(V1_READING_PROGRESS_SQL)
+            db.execSQL(V2_BOOKMARKS_SQL)
+            db.execSQL(V2_BOOKMARKS_INDEX_SQL)
+            db.execSQL(V2_ANNOTATIONS_SQL)
+            db.execSQL(V2_ANNOTATIONS_INDEX_SQL)
+            db.execSQL(V3_SESSIONS_SQL)
+            db.execSQL(V3_SESSIONS_INDEX_SQL)
+            db.execSQL(
+                "INSERT INTO books(id,contentHash,title,authors,description,language,format,mediaType,filePath,fileSize,coverPath,importedAt,lastOpenedAt,status) " +
+                    "VALUES('b4','h4','书架测试书','[]',NULL,NULL,'EPUB','application/epub+zip','/b4.epub',0,NULL,0,NULL,'UNREAD')",
+            )
+            db.version = 3
+        }
+
+        // 2. Room 打开（触发 v3→v4 迁移 + schema 校验；完整迁移链 1→2→3→4）
+        val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .allowMainThreadQueries()
+            .build()
+
+        // 3. 旧数据未丢
+        assertEquals("书架测试书", db.bookDao().getById("b4")?.title)
+
+        // 4. 系统书架「收藏」已由迁移插入（固定 id、kind=SYSTEM_FAVORITE）
+        val favorite = db.collectionDao().getById(SYSTEM_FAVORITE_ID)
+        assertNotNull(favorite)
+        assertEquals(CollectionKind.SYSTEM_FAVORITE, favorite?.kind)
+
+        // 5. 新表可写读
+        db.collectionDao().insert(
+            CollectionEntity(id = "c1", name = "小说", sortOrder = 0L, createdAt = 0L, kind = CollectionKind.CUSTOM),
+        )
+        db.collectionBookDao().add(CollectionBookEntity("c1", "b4", 0L))
+        assertEquals("c1", db.collectionBookDao().collectionIdsForBook("b4").first())
+
+        // 6. 双向 FK CASCADE：删书连带清书架关系
+        db.bookDao().deleteById("b4")
+        assertTrue(db.collectionBookDao().collectionIdsForBook("b4").isEmpty())
+        // 删书架连带清关系（书不删）
+        db.collectionDao().deleteById("c1")
+        assertTrue(db.collectionDao().snapshotAll().none { it.id == "c1" })
 
         db.close()
     }
@@ -179,5 +236,14 @@ class BookDatabaseMigrationTest {
 
         const val V2_ANNOTATIONS_INDEX_SQL =
             "CREATE INDEX IF NOT EXISTS `index_annotations_bookId` ON `annotations` (`bookId`)"
+
+        // v3 schema 的 reading_sessions（取自 app/schemas/.../3.json，v3 已冻结，逐字硬编码）。
+        const val V3_SESSIONS_SQL =
+            "CREATE TABLE IF NOT EXISTS `reading_sessions` (`id` TEXT NOT NULL, `bookId` TEXT NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `endedAt` INTEGER NOT NULL, `activeSeconds` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`id`), FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"
+
+        const val V3_SESSIONS_INDEX_SQL =
+            "CREATE INDEX IF NOT EXISTS `index_reading_sessions_bookId` ON `reading_sessions` (`bookId`)"
     }
 }

@@ -11,6 +11,10 @@ import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookEntity
 import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.BookmarkEntity
+import com.xuziyue.ebook.data.db.CollectionBookDao
+import com.xuziyue.ebook.data.db.CollectionBookEntity
+import com.xuziyue.ebook.data.db.CollectionDao
+import com.xuziyue.ebook.data.db.CollectionEntity
 import com.xuziyue.ebook.data.db.ReadingProgressDao
 import com.xuziyue.ebook.data.db.ReadingProgressEntity
 import com.xuziyue.ebook.data.db.ReadingSessionDao
@@ -45,6 +49,8 @@ class BackupUseCase(
     private val bookmarkDao: BookmarkDao,
     private val annotationDao: AnnotationDao,
     private val sessionDao: ReadingSessionDao,
+    private val collectionDao: CollectionDao,
+    private val collectionBookDao: CollectionBookDao,
     private val dataStore: DataStore<Preferences>,
     @ApplicationContext private val context: Context,
 ) {
@@ -65,6 +71,8 @@ class BackupUseCase(
         val bookmarks = bookmarkDao.snapshotAll()
         val annotations = annotationDao.snapshotAll()
         val sessions = sessionDao.snapshotAll()
+        val collections = collectionDao.snapshotAll()
+        val collectionBooks = collectionBookDao.snapshotAll()
 
         // 2. 构造 BackupDto + settings 快照
         val dto = BackupDto(
@@ -74,6 +82,8 @@ class BackupUseCase(
             bookmarks = bookmarks.map(::toRow),
             annotations = annotations.map(::toRow),
             readingSessions = sessions.map(::toRow),
+            collections = collections.map(::toRow),
+            collectionBooks = collectionBooks.map(::toRow),
             settings = snapshotSettings(),
         )
 
@@ -177,6 +187,14 @@ class BackupUseCase(
 
     private fun toRow(s: ReadingSessionEntity) = SessionRow(
         id = s.id, bookId = s.bookId, startedAt = s.startedAt, endedAt = s.endedAt, activeSeconds = s.activeSeconds,
+    )
+
+    private fun toRow(c: CollectionEntity) = CollectionRow(
+        id = c.id, name = c.name, sortOrder = c.sortOrder, createdAt = c.createdAt, kind = c.kind.name,
+    )
+
+    private fun toRow(cb: CollectionBookEntity) = CollectionBookRow(
+        collectionId = cb.collectionId, bookId = cb.bookId, addedAt = cb.addedAt,
     )
 
     private companion object {

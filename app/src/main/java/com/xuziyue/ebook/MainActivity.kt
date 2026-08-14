@@ -10,6 +10,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +33,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -55,6 +61,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -74,10 +81,13 @@ import androidx.navigation.navArgument
 import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.ImportBookUseCase
 import com.xuziyue.ebook.data.bookIdOrNull
+import com.xuziyue.ebook.library.CollectionPickerSheet
 import com.xuziyue.ebook.library.LibraryFilter
 import com.xuziyue.ebook.library.LibrarySort
 import com.xuziyue.ebook.library.LibraryViewMode
 import com.xuziyue.ebook.library.LibraryViewModel
+import com.xuziyue.ebook.model.Collection
+import com.xuziyue.ebook.model.CollectionKind
 import com.xuziyue.ebook.model.LibraryItem
 import com.xuziyue.ebook.library.BookDetailScreen
 import com.xuziyue.ebook.reader.ReaderScreen
@@ -250,6 +260,12 @@ private fun LibraryScreen(
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val items by viewModel.items.collectAsStateWithLifecycle(initialValue = emptyList())
     val importing by viewModel.importing.collectAsStateWithLifecycle()
+    // LIB-05：书架
+    val collections by viewModel.collections.collectAsStateWithLifecycle(initialValue = emptyList())
+    val selectedCollectionId by viewModel.selectedCollectionId.collectAsStateWithLifecycle()
+    // LIB-06：批量选择
+    val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
+    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // 静态导入结果文案在 Composable 作用域解析（lint 要求 stringResource 而非 context.getString，
     // 这样随系统语言变化自动重组；Failed 的动态消息走 UserMessage.resolve(context)）。
@@ -258,6 +274,10 @@ private fun LibraryScreen(
     val importProgressText = stringResource(R.string.reader_importing)
     val deleteLongClickLabel = stringResource(R.string.library_delete_long_click)
     var pendingDelete by remember { mutableStateOf<LibraryItem?>(null) }
+    // LIB-05/06：书架选择 sheet + 书架重命名/删除对话框状态
+    var showCollectionPicker by remember { mutableStateOf(false) }
+    var pendingShelfAction by remember { mutableStateOf<ShelfDialog?>(null) }
+    val favoriteName = stringResource(R.string.shelf_system_favorite)
 
     // IMP-02：外部 Intent 导入（ACTION_VIEW/SEND），与 SAF 导入共用 importEvents 反馈通道。
     LaunchedEffect(Unit) {
@@ -286,6 +306,13 @@ private fun LibraryScreen(
     // IMP-07：删除结果反馈（Toast）。两态走 UserMessage.resolve（避免 Composable 内 context.getString 触发 lint）。
     LaunchedEffect(Unit) {
         viewModel.deleteEvents.collect { outcome ->
+            Toast.makeText(context, outcome.message.resolve(context), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // LIB-05/06：书架操作结果反馈（Toast）。
+    LaunchedEffect(Unit) {
+        viewModel.shelfEvents.collect { outcome ->
             Toast.makeText(context, outcome.message.resolve(context), Toast.LENGTH_SHORT).show()
         }
     }
@@ -357,7 +384,7 @@ private fun LibraryScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth().semantics { contentDescription = importProgressText })
             }
 
-            // 三入口（LIB-02）：最近阅读 / 全部 / 已读完
+            // 四入口（LIB-02 三入口 + LIB-05 书架）：最近阅读 / 全部 / 已读完 / 书架
             PrimaryTabRow(selectedTabIndex = filter.ordinal) {
                 Tab(
                     selected = filter == LibraryFilter.RECENT,
@@ -374,51 +401,120 @@ private fun LibraryScreen(
                     onClick = { viewModel.setFilter(LibraryFilter.FINISHED) },
                     text = { Text(stringResource(R.string.library_tab_finished)) },
                 )
+                Tab(
+                    selected = filter == LibraryFilter.SHELVES,
+                    onClick = {
+                        viewModel.setFilter(LibraryFilter.SHELVES)
+                        viewModel.openCollection(null)
+                    },
+                    text = { Text(stringResource(R.string.library_tab_shelves)) },
+                )
             }
 
             HorizontalDivider()
 
-            when {
-                items.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        // 空态文案按筛选维度区分（LIB-02：已读完/最近阅读空 ≠ 没书）
-                        val emptyText = when {
-                            query.isNotBlank() -> stringResource(R.string.library_empty_search, query)
-                            filter == LibraryFilter.FINISHED -> stringResource(R.string.library_empty_finished)
-                            filter == LibraryFilter.RECENT -> stringResource(R.string.library_empty_recent)
-                            else -> stringResource(R.string.library_empty_all)
-                        }
-                        Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                viewMode == LibraryViewMode.LIST -> {
-                    LazyColumn {
-                        items(items, key = { it.book.id }) { item ->
-                            LibraryListRow(
-                                item = item,
-                                onClick = { onOpenBook(item.book.id) },
-                                onLongClick = { pendingDelete = item },
-                                onLongClickLabel = deleteLongClickLabel,
-                            )
-                            HorizontalDivider()
-                        }
-                    }
-                }
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+            // LIB-06：批量选择模式下的上下文操作栏（替换排序/导入）
+            if (selectionMode) {
+                BatchActionBar(
+                    selectedCount = selectedIds.size,
+                    onSelectAll = viewModel::selectAllVisible,
+                    onAddToShelf = { showCollectionPicker = true },
+                    onDelete = { pendingShelfAction = ShelfDialog.BatchDelete(selectedIds.size) },
+                    onCancel = viewModel::clearSelection,
+                )
+                HorizontalDivider()
+            }
+
+            // 书架 Tab 分两种视图：书架列表（selectedCollectionId == null）/ 书架内书籍
+            if (filter == LibraryFilter.SHELVES && selectedCollectionId == null && !selectionMode) {
+                ShelfListView(
+                    collections = collections,
+                    onOpenCollection = { viewModel.openCollection(it) },
+                    onNewShelf = { pendingShelfAction = ShelfDialog.CreateShelf },
+                    onRenameShelf = { pendingShelfAction = ShelfDialog.RenameShelf(it) },
+                    onDeleteShelf = { pendingShelfAction = ShelfDialog.DeleteShelf(it) },
+                )
+            } else {
+                // 书架内浏览时顶部加返回书架列表的条目
+                if (filter == LibraryFilter.SHELVES && selectedCollectionId != null) {
+                    val shelf = collections.firstOrNull { it.id == selectedCollectionId }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.openCollection(null) }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        gridItems(items, key = { it.book.id }) { item ->
-                            LibraryGridCard(
-                                item = item,
-                                onClick = { onOpenBook(item.book.id) },
-                                onLongClick = { pendingDelete = item },
-                                onLongClickLabel = deleteLongClickLabel,
-                            )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            shelf?.let {
+                                if (it.kind == CollectionKind.SYSTEM_FAVORITE) stringResource(R.string.shelf_system_favorite)
+                                else it.name
+                            } ?: stringResource(R.string.shelf_title),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+                when {
+                    items.isEmpty() -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            // 空态文案按筛选维度区分（LIB-02：已读完/最近阅读空 ≠ 没书）
+                            val emptyText = when {
+                                query.isNotBlank() -> stringResource(R.string.library_empty_search, query)
+                                filter == LibraryFilter.FINISHED -> stringResource(R.string.library_empty_finished)
+                                filter == LibraryFilter.RECENT -> stringResource(R.string.library_empty_recent)
+                                filter == LibraryFilter.SHELVES -> stringResource(R.string.shelf_book_count_zero)
+                                else -> stringResource(R.string.library_empty_all)
+                            }
+                            Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    viewMode == LibraryViewMode.LIST -> {
+                        LazyColumn {
+                            items(items, key = { it.book.id }) { item ->
+                                val isSelected = item.book.id in selectedIds
+                                LibraryListRow(
+                                    item = item,
+                                    selected = selectionMode && isSelected,
+                                    onClick = {
+                                        if (selectionMode) viewModel.toggleSelection(item.book.id)
+                                        else onOpenBook(item.book.id)
+                                    },
+                                    onLongClick = {
+                                        if (selectionMode) viewModel.toggleSelection(item.book.id)
+                                        else viewModel.enterSelectionMode(item.book.id)
+                                    },
+                                    onLongClickLabel = stringResource(R.string.batch_selected_count, selectedIds.size),
+                                )
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                    else -> {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            gridItems(items, key = { it.book.id }) { item ->
+                                val isSelected = item.book.id in selectedIds
+                                LibraryGridCard(
+                                    item = item,
+                                    selected = selectionMode && isSelected,
+                                    onClick = {
+                                        if (selectionMode) viewModel.toggleSelection(item.book.id)
+                                        else onOpenBook(item.book.id)
+                                    },
+                                    onLongClick = {
+                                        if (selectionMode) viewModel.toggleSelection(item.book.id)
+                                        else viewModel.enterSelectionMode(item.book.id)
+                                    },
+                                    onLongClickLabel = stringResource(R.string.batch_selected_count, selectedIds.size),
+                                )
+                            }
                         }
                     }
                 }
@@ -443,6 +539,35 @@ private fun LibraryScreen(
                     Text(stringResource(R.string.common_cancel))
                 }
             },
+        )
+    }
+
+    // LIB-05/06：书架创建 / 重命名 / 删除 / 批量删除 对话框。
+    ShelfDialogRenderer(
+        dialog = pendingShelfAction,
+        onDismiss = { pendingShelfAction = null },
+        onCreate = { name -> viewModel.createCollection(name); pendingShelfAction = null },
+        onRename = { id, name -> viewModel.renameCollection(id, name); pendingShelfAction = null },
+        onDeleteShelf = { c -> viewModel.deleteCollection(c); pendingShelfAction = null },
+        onBatchDelete = { viewModel.deleteSelected(); pendingShelfAction = null },
+    )
+
+    // LIB-06：批量加入书架选择 sheet。
+    if (showCollectionPicker) {
+        CollectionPickerSheet(
+            collections = collections,
+            initiallySelected = emptySet(),
+            onConfirm = { selected ->
+                // 批量加入：对每个选中的书架执行 addSelectedToCollection
+                val first = collections.firstOrNull { it.id in selected }
+                if (first != null) {
+                    val name = if (first.kind == CollectionKind.SYSTEM_FAVORITE) favoriteName else first.name
+                    viewModel.addSelectedToCollection(first.id, name)
+                }
+                showCollectionPicker = false
+            },
+            onQuickCreate = { viewModel.createCollection(it) },
+            onDismiss = { showCollectionPicker = false },
         )
     }
 }
@@ -475,11 +600,13 @@ private fun LibraryListRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onLongClickLabel: String,
+    selected: Boolean = false,
 ) {
     val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -551,10 +678,16 @@ private fun LibraryGridCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onLongClickLabel: String,
+    selected: Boolean = false,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .border(
+                width = if (selected) 3.dp else 0.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = MaterialTheme.shapes.medium,
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -587,5 +720,233 @@ private fun LibraryGridCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+// ===== LIB-05/06：书架对话框 + 书架列表视图 + 批量操作栏 =====
+
+/** 书架相关对话框状态（创建 / 重命名 / 删书架 / 批量删除）。 */
+private sealed interface ShelfDialog {
+    data object CreateShelf : ShelfDialog
+    data class RenameShelf(val collection: Collection) : ShelfDialog
+    data class DeleteShelf(val collection: Collection) : ShelfDialog
+    data class BatchDelete(val count: Int) : ShelfDialog
+}
+
+/** 渲染书架对话框（按 [ShelfDialog] 具体类型）。 */
+@Composable
+private fun ShelfDialogRenderer(
+    dialog: ShelfDialog?,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+    onRename: (String, String) -> Unit,
+    onDeleteShelf: (Collection) -> Unit,
+    onBatchDelete: () -> Unit,
+) {
+    when (dialog) {
+        null -> Unit
+        is ShelfDialog.CreateShelf -> ShelfNameDialog(
+            title = stringResource(R.string.shelf_new),
+            hint = stringResource(R.string.shelf_new_hint),
+            confirmLabel = stringResource(R.string.shelf_new),
+            initialName = "",
+            onConfirm = { onCreate(it) },
+            onDismiss = onDismiss,
+        )
+        is ShelfDialog.RenameShelf -> ShelfNameDialog(
+            title = stringResource(R.string.shelf_rename),
+            hint = stringResource(R.string.shelf_rename_hint),
+            confirmLabel = stringResource(R.string.shelf_rename),
+            initialName = dialog.collection.name,
+            onConfirm = { onRename(dialog.collection.id, it) },
+            onDismiss = onDismiss,
+        )
+        is ShelfDialog.DeleteShelf -> {
+            val name = if (dialog.collection.kind == CollectionKind.SYSTEM_FAVORITE) {
+                stringResource(R.string.shelf_system_favorite)
+            } else {
+                dialog.collection.name
+            }
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(R.string.shelf_delete)) },
+                text = { Text(stringResource(R.string.shelf_delete_confirm, name)) },
+                confirmButton = {
+                    TextButton(onClick = { onDeleteShelf(dialog.collection) }) {
+                        Text(stringResource(R.string.shelf_delete))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+                },
+            )
+        }
+        is ShelfDialog.BatchDelete -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(R.string.batch_delete)) },
+            text = { Text(stringResource(R.string.batch_delete_confirm, dialog.count)) },
+            confirmButton = {
+                TextButton(onClick = onBatchDelete) { Text(stringResource(R.string.batch_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+}
+
+/** 书架命名对话框（新建 / 重命名共用，输入框 + 确认）。 */
+@Composable
+private fun ShelfNameDialog(
+    title: String,
+    hint: String,
+    confirmLabel: String,
+    initialName: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(hint) },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = { onConfirm(name.trim()) }) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
+}
+
+/** 批量选择模式上下文操作栏（LIB-06）：已选数 + 全选 + 加入书架 + 删除 + 取消。 */
+@Composable
+private fun BatchActionBar(
+    selectedCount: Int,
+    onSelectAll: () -> Unit,
+    onAddToShelf: () -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            stringResource(R.string.batch_selected_count, selectedCount),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onSelectAll) { Text(stringResource(R.string.batch_select_all)) }
+        TextButton(onClick = onAddToShelf) { Text(stringResource(R.string.batch_add_to_shelf)) }
+        TextButton(onClick = onDelete) { Text(stringResource(R.string.batch_delete)) }
+        TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
+    }
+}
+
+/**
+ * 书架列表视图（LIB-05 书架 Tab 首页）：每行书架名 + 书数 + 进入；顶部新建书架。
+ * 长按书架行弹重命名/删除（系统书架仅查看）。
+ */
+@Composable
+private fun ShelfListView(
+    collections: List<Collection>,
+    onOpenCollection: (String) -> Unit,
+    onNewShelf: () -> Unit,
+    onRenameShelf: (Collection) -> Unit,
+    onDeleteShelf: (Collection) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        TextButton(
+            onClick = onNewShelf,
+            modifier = Modifier.padding(start = 8.dp, top = 8.dp),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.shelf_new))
+        }
+        if (collections.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.shelf_empty),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(collections, key = { it.id }) { c ->
+                    ShelfRow(c, onOpenCollection, onRenameShelf, onDeleteShelf)
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ShelfRow(
+    collection: Collection,
+    onOpen: (String) -> Unit,
+    onRename: (Collection) -> Unit,
+    onDelete: (Collection) -> Unit,
+) {
+    val name = if (collection.kind == CollectionKind.SYSTEM_FAVORITE) {
+        stringResource(R.string.shelf_system_favorite)
+    } else {
+        collection.name
+    }
+    val countText = if (collection.bookCount == 0) {
+        stringResource(R.string.shelf_book_count_zero)
+    } else {
+        stringResource(R.string.shelf_book_count, collection.bookCount)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { onOpen(collection.id) },
+                onLongClick = {
+                    // 系统书架「收藏」不可改名/删除，长按无操作
+                    if (collection.kind != CollectionKind.SYSTEM_FAVORITE) onRename(collection)
+                },
+                onLongClickLabel = stringResource(R.string.shelf_rename),
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (collection.kind == CollectionKind.SYSTEM_FAVORITE) {
+            Icon(Icons.Filled.Star, contentDescription = null)
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                countText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (collection.kind != CollectionKind.SYSTEM_FAVORITE) {
+            TextButton(onClick = { onRename(collection) }) {
+                Text(stringResource(R.string.shelf_rename))
+            }
+            TextButton(onClick = { onDelete(collection) }) {
+                Text(stringResource(R.string.shelf_delete))
+            }
+        }
     }
 }

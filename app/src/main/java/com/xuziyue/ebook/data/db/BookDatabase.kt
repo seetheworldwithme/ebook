@@ -7,12 +7,12 @@ import androidx.room.TypeConverters
 /**
  * 应用主数据库（Room，design.md §6.4/6.5）。
  *
- * version=3：v1（books + reading_progress）→ v2 加 bookmarks + annotations（READ-06/07）
- * → v3 加 reading_sessions（DATA-04 阅读时长）。
+ * version=4：v1（books + reading_progress）→ v2 加 bookmarks + annotations（READ-06/07）
+ * → v3 加 reading_sessions（DATA-04 阅读时长）→ v4 加 collections + collection_books（LIB-05 书架/标签/收藏）。
  * exportSchema=true（红线 #6：schema 导出 + migration 测试）。
- * schema JSON 落 `app/schemas/.../BookDatabase/{1,2,3}.json`，提交进仓库供 migration 测试读取。
+ * schema JSON 落 `app/schemas/.../BookDatabase/{1,2,3,4}.json`，提交进仓库供 migration 测试读取。
  *
- * 升级路径见 [MIGRATION_1_2] / [MIGRATION_2_3]；DI 在 provideBookDatabase 注册，绝不 fallbackToDestructive（红线 #6）。
+ * 升级路径见 [MIGRATION_1_2] / [MIGRATION_2_3] / [MIGRATION_3_4]；DI 在 provideBookDatabase 注册，绝不 fallbackToDestructive（红线 #6）。
  */
 @Database(
     entities = [
@@ -21,8 +21,10 @@ import androidx.room.TypeConverters
         BookmarkEntity::class,
         AnnotationEntity::class,
         ReadingSessionEntity::class,
+        CollectionEntity::class,
+        CollectionBookEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(BookTypeConverters::class)
@@ -32,6 +34,8 @@ abstract class BookDatabase : RoomDatabase() {
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun annotationDao(): AnnotationDao
     abstract fun readingSessionDao(): ReadingSessionDao
+    abstract fun collectionDao(): CollectionDao
+    abstract fun collectionBookDao(): CollectionBookDao
 
     companion object {
         const val DB_NAME = "ebook.db"

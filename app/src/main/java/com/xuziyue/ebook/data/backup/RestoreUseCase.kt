@@ -13,10 +13,15 @@ import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookEntity
 import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.BookmarkEntity
+import com.xuziyue.ebook.data.db.CollectionBookDao
+import com.xuziyue.ebook.data.db.CollectionBookEntity
+import com.xuziyue.ebook.data.db.CollectionDao
+import com.xuziyue.ebook.data.db.CollectionEntity
 import com.xuziyue.ebook.data.db.ReadingProgressDao
 import com.xuziyue.ebook.data.db.ReadingProgressEntity
 import com.xuziyue.ebook.data.db.ReadingSessionDao
 import com.xuziyue.ebook.data.db.ReadingSessionEntity
+import com.xuziyue.ebook.model.CollectionKind
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReadingStatus
 import com.xuziyue.ebook.ui.UserMessage
@@ -49,6 +54,8 @@ class RestoreUseCase(
     private val bookmarkDao: BookmarkDao,
     private val annotationDao: AnnotationDao,
     private val sessionDao: ReadingSessionDao,
+    private val collectionDao: CollectionDao,
+    private val collectionBookDao: CollectionBookDao,
     private val dataStore: DataStore<Preferences>,
     @ApplicationContext private val context: Context,
 ) {
@@ -137,6 +144,8 @@ class RestoreUseCase(
         var overwritten = 0
         var skipped = 0
         var totalBytes = 0L
+        // backup bookId → 恢复后实际 bookId（本地已存在则复用本地 id），供书架关系重映射。
+        val bookIdMap = mutableMapOf<String, String>()
 
         for (bookRow in dto.books) {
             val local = bookDao.getByContentHash(bookRow.contentHash)
@@ -199,7 +208,11 @@ class RestoreUseCase(
 
             // 进度 / 书签 / 批注 / 会话按策略写入
             restoreRelated(dto, targetBookId, bookRow.id, strategy, local != null)
+            bookIdMap[bookRow.id] = targetBookId
         }
+
+        // 书架 / 关系恢复（LIB-05）：collections 直接 upsert（系统书架确保存在），关系按 bookIdMap 重映射。
+        restoreCollections(dto, bookIdMap)
 
         // 2. settings 覆盖（SKIP 策略不动设置；其余覆盖）
         if (strategy != Strategy.SKIP_CONFLICTS) {
@@ -278,6 +291,33 @@ class RestoreUseCase(
         // 会话（reading_sessions 直接 upsert，id 来自 backup）
         dto.readingSessions.filter { it.bookId == backupBookId }.forEach {
             sessionDao.upsert(ReadingSessionEntity(it.id, targetBookId, it.startedAt, it.endedAt, it.activeSeconds))
+        }
+    }
+
+    /**
+     * 恢复书架与归属关系（LIB-05）。
+     *
+     * - collections：upsert（已存在同 id 覆盖；系统书架「收藏」固定 id，确保恢复后一定存在）。
+     * - collection_books：按 [bookIdMap] 把 backup bookId 重映射为本地实际 bookId 后写入（IGNORE 幂等，
+     *   跳过映射不到的孤儿关系——书被 SKIP 或未恢复时不留半截关系）。
+     */
+    private suspend fun restoreCollections(dto: BackupDto, bookIdMap: Map<String, String>) {
+        dto.collections.forEach { c ->
+            collectionDao.upsert(
+                CollectionEntity(
+                    id = c.id,
+                    name = c.name,
+                    sortOrder = c.sortOrder,
+                    createdAt = c.createdAt,
+                    kind = runCatching { CollectionKind.valueOf(c.kind) }.getOrDefault(CollectionKind.CUSTOM),
+                ),
+            )
+        }
+        dto.collectionBooks.forEach { cb ->
+            val targetBookId = bookIdMap[cb.bookId] ?: return@forEach // 孤儿关系跳过
+            collectionBookDao.add(
+                CollectionBookEntity(collectionId = cb.collectionId, bookId = targetBookId, addedAt = cb.addedAt),
+            )
         }
     }
 

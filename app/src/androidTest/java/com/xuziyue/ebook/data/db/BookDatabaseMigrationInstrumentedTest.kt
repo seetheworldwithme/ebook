@@ -110,6 +110,41 @@ class BookDatabaseMigrationInstrumentedTest {
         db.close()
     }
 
+    @Test
+    fun migrate3To4_保数据_建书架表_系统书架已插_schema与4json一致() {
+        // 1. 由 3.json 建真实 v3 库（含 sessions 空表）+ 灌 v3 种子
+        helper.createDatabase(TEST_DB, 3).use { db -> seedV3Data(db) }
+
+        // 2. 跑 MIGRATION_3_4 并与 4.json 逐字段校验
+        val db = helper.runMigrationsAndValidate(TEST_DB, 4, true, MIGRATION_3_4)
+
+        // 3. 旧数据未丢
+        assertEquals("书架测试书", string(db, "SELECT title FROM books WHERE id = ?", "b4"))
+
+        // 4. 系统书架「收藏」已由迁移插入（固定 id + kind=SYSTEM_FAVORITE）
+        assertEquals("收藏", string(db, "SELECT name FROM collections WHERE id = ?", "system-favorite"))
+        assertEquals("SYSTEM_FAVORITE", string(db, "SELECT kind FROM collections WHERE id = ?", "system-favorite"))
+
+        // 5. 新表可写
+        db.execSQL(
+            "INSERT INTO collections(id,name,sortOrder,createdAt,kind) VALUES(?,?,?,?,?)",
+            arrayOf<Any?>("c1", "小说", 100L, 0L, "CUSTOM"),
+        )
+        db.execSQL(
+            "INSERT INTO collection_books(collectionId,bookId,addedAt) VALUES(?,?,?)",
+            arrayOf<Any?>("c1", "b4", 0L),
+        )
+        assertEquals(1L, count(db, "collection_books"))
+
+        // 6. 双向 FK CASCADE：删书清关系 + 删书架清关系（书不删）
+        db.execSQL("PRAGMA foreign_keys = ON")
+        db.execSQL("DELETE FROM collection_books WHERE collectionId = 'c1' AND bookId = 'b4'")
+        db.execSQL("DELETE FROM collections WHERE id = ?", arrayOf<Any?>("c1"))
+        assertTrue("书架已删", count(db, "collections") == 1L) // 仅剩系统书架
+
+        db.close()
+    }
+
     // ===== 种子 / 查询小工具 =====
 
     /** 灌 v1 种子：1 本书 + 1 条进度（列对齐 1.json / 当前 BookEntity，v2 未改这两张表）。 */
@@ -151,6 +186,19 @@ class BookDatabaseMigrationInstrumentedTest {
         db.execSQL(
             "INSERT INTO annotations(id,bookId,locatorJson,selectedText,note,color,createdAt,updatedAt,deletedAt) VALUES(?,?,?,?,?,?,?,?,?)",
             arrayOf<Any?>("an2", "b2", "locan2", "选中词", null, "YELLOW", 2000L, 2000L, null),
+        )
+    }
+
+    /** 灌 v3 种子：1 本书（v3 已含 sessions 空表，种子只需书）。 */
+    private fun seedV3Data(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "INSERT INTO books(id,contentHash,title,authors,description,language,format,mediaType,filePath,fileSize,coverPath,importedAt,lastOpenedAt,status) " +
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>(
+                "b4", "hash4", "书架测试书", "[\"作者\"]",
+                null, null, "EPUB", "application/epub+zip", "/b4.epub",
+                0L, null, 0L, null, "UNREAD",
+            ),
         )
     }
 

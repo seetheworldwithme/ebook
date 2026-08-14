@@ -3,6 +3,8 @@ package com.xuziyue.ebook.library
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -25,9 +30,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -40,6 +49,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xuziyue.ebook.R
 import com.xuziyue.ebook.model.Book
+import com.xuziyue.ebook.model.CollectionKind
 import com.xuziyue.ebook.ui.BookCover
 import com.xuziyue.ebook.ui.formatDuration
 import com.xuziyue.ebook.ui.relativeTime
@@ -58,6 +68,9 @@ fun BookDetailScreen(
     viewModel: BookDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val collections by viewModel.collections.collectAsStateWithLifecycle(initialValue = emptyList())
+    var showShelfPicker by remember { mutableStateOf(false) }
+    var pendingDeleteBook by remember { mutableStateOf<Book?>(null) }
 
     Scaffold(
         topBar = {
@@ -68,14 +81,79 @@ fun BookDetailScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.detail_back))
                     }
                 },
+                actions = {
+                    // LIB-05：收藏 toggle（系统书架快捷操作）。
+                    // 视觉区分不靠 Filled/Outlined 图标外形（两者小尺寸下几乎不可辨），
+                    // 而靠 tint：已收藏=强调色（primary）实心星，未收藏=中性灰空心星。
+                    if (state.book != null) {
+                        IconButton(onClick = viewModel::toggleFavorite) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = stringResource(
+                                    if (state.isFavorite) R.string.shelf_favorite_remove else R.string.shelf_favorite_add,
+                                ),
+                                tint = if (state.isFavorite) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
         when {
             state.loading -> CenterText(padding, stringResource(R.string.detail_loading))
             state.book == null -> CenterText(padding, stringResource(R.string.detail_not_found))
-            else -> DetailContent(state, padding, onRead)
+            else -> DetailContent(
+                state = state,
+                collections = collections,
+                padding = padding,
+                onRead = onRead,
+                onAddToShelf = { showShelfPicker = true },
+                onToggleCollection = viewModel::toggleBookInCollection,
+                onDeleteBook = { pendingDeleteBook = state.book },
+            )
         }
+    }
+
+    // LIB-05：单本加入书架选择 sheet（复用 CollectionPickerSheet）。
+    if (showShelfPicker) {
+        CollectionPickerSheet(
+            collections = collections,
+            initiallySelected = state.collectionIds.toSet(),
+            onConfirm = { selected ->
+                // diff：当前在册的若不在 selected 则移除；selected 新增的加入。
+                val current = state.collectionIds.toSet()
+                (selected - current).forEach { viewModel.toggleBookInCollection(it) }
+                (current - selected).forEach { viewModel.toggleBookInCollection(it) }
+                showShelfPicker = false
+            },
+            onQuickCreate = { /* 详情页新建书架留后，可复用 LibraryViewModel 范式 */ },
+            onDismiss = { showShelfPicker = false },
+        )
+    }
+
+    // LIB-06：单本删除（IMP-07 入口迁移到详情页）。
+    pendingDeleteBook?.let { book ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteBook = null },
+            title = { Text(stringResource(R.string.library_delete)) },
+            text = { Text(stringResource(R.string.library_delete_confirm, book.title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBook(book)
+                    pendingDeleteBook = null
+                }) { Text(stringResource(R.string.library_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteBook = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 
@@ -90,7 +168,15 @@ private fun CenterText(padding: PaddingValues, text: String) {
 }
 
 @Composable
-private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRead: () -> Unit) {
+private fun DetailContent(
+    state: BookDetailUiState,
+    collections: List<com.xuziyue.ebook.model.Collection>,
+    padding: PaddingValues,
+    onRead: () -> Unit,
+    onAddToShelf: () -> Unit,
+    onToggleCollection: (String) -> Unit,
+    onDeleteBook: () -> Unit,
+) {
     val book: Book = state.book!!
     val context = LocalContext.current
     Column(
@@ -199,6 +285,43 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
 
         SectionDivider()
 
+        // ⑤ 书架 · 标签（LIB-05：展示本书所属书架 chips + 加入入口）
+        SectionTitle(stringResource(R.string.detail_section_shelves))
+        Spacer(Modifier.height(8.dp))
+        val bookCollections = collections.filter { it.id in state.collectionIds }
+        if (bookCollections.isEmpty()) {
+            Text(
+                stringResource(R.string.detail_no_shelves),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                bookCollections.forEach { c ->
+                    val name = if (c.kind == CollectionKind.SYSTEM_FAVORITE) {
+                        stringResource(R.string.shelf_system_favorite)
+                    } else {
+                        c.name
+                    }
+                    AssistChip(
+                        onClick = { onToggleCollection(c.id) },
+                        label = { Text(name) },
+                        leadingIcon = {
+                            if (c.kind == CollectionKind.SYSTEM_FAVORITE) {
+                                Icon(Icons.Filled.Star, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        },
+                    )
+                }
+            }
+        }
+        TextButton(onClick = onAddToShelf) { Text(stringResource(R.string.detail_add_to_shelf)) }
+
+        SectionDivider()
+
         // ⑤ 阅读统计（DATA-04：本书总时长 + 今日时长）
         SectionTitle(stringResource(R.string.detail_section_stats))
         Spacer(Modifier.height(8.dp))
@@ -213,9 +336,19 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
 
         Spacer(Modifier.height(24.dp))
 
-        // ⑤ 继续阅读入口（有进度=继续，未读=开始）
+        // 继续阅读入口（有进度=继续，未读=开始）
         Button(onClick = onRead, modifier = Modifier.fillMaxWidth()) {
             Text(if (p != null) stringResource(R.string.detail_continue) else stringResource(R.string.detail_start))
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // LIB-06：单本删除（IMP-07 入口迁移到详情页，危险操作放底部 + 红色文字提示）。
+        TextButton(onClick = onDeleteBook, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                stringResource(R.string.library_delete),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }

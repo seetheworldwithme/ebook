@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.xuziyue.ebook.data.AppSettingsRepository
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.CollectionRepository
 import com.xuziyue.ebook.data.ReadingSessionRepository
 import com.xuziyue.ebook.data.db.AnnotationEntity
 import com.xuziyue.ebook.data.db.BookDatabase
@@ -82,6 +83,7 @@ class BookDetailViewModelTest {
         db.bookmarkDao(),
         db.annotationDao(),
         sessionRepo,
+        CollectionRepository(db.collectionDao(), db.collectionBookDao(), db.bookDao()),
         SavedStateHandle(mapOf("bookId" to bookId)),
     )
 
