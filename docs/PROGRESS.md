@@ -18,12 +18,12 @@
 
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
-| P0（MVP 必做） | 28 | 26 | 2 |
-| P1（首个增强版） | 11 | 0 | 0 |
+| P0（MVP 必做） | 28 | 27 | 1 |
+| P1（首个增强版） | 11 | 3 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 26 | 2 |
+| 合计 | 42 | 30 | 1 |
 
-> 当前进度：26 ✅ / 2 🚧（SET-03 系统字号 + SET-05 隐私/许可证/崩溃日志 经 adb 真机回归已转 ✅；SET-01 i18n 剩英文界面肉眼、SET-02 无障碍剩 TalkBack 手指，二者 adb 能做的均已过）。详见文末变更记录。
+> 当前进度：30 ✅ / 1 🚧（SET-02 TalkBack 手指项；DATA-03/04 真机回归全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -95,7 +95,7 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| SET-01 | 🚧 | 简体中文 + 英文；所有用户可见文案进入资源文件。adb 层面已确认（2026-08-13）：APK 完整打包英文资源（aapt2 见 175 个 `en` config，每 key 均含 zh-default+en 双值，如 library_settings=设置/Settings、library_sort=排序/Sort），StringResourceKeysTest key-parity 单测过。剩英文界面肉眼——adb 切不了非 root 真机 locale（`setprop persist.sys.locale` 被拒 / `cmd locale` 无此命令），须徐先生系统设置切英文验收 |
+| SET-01 | ✅ | 简体中文 + 英文；所有用户可见文案进入资源文件。**adb 真机切英文逐页验过（2026-08-14）**：突破旧边界——`cmd locale set-system-locales` 在非 root 真机未知命令，但 Android 13+ 的 **per-app 语言** `cmd locale set-app-locales com.xuziyue.ebook --locales en-US` 通了，app 实际切英文渲染，逐页 uiautomator dump 确认（书库/详情/阅读器顶底栏/目录/搜索 4 状态/进度/排版+显示区/书签/笔记/导出弹窗/删除确认框/设置/隐私/许可证/排序菜单/已读完空态 全英文）。aapt2 英文资源打包完整 + StringResourceKeysTest key-parity 单测。测后恢复 locale 为空 |
 | SET-02 | 🚧 | TalkBack、语义标签、焦点顺序、48dp 最小触控目标、高对比度。adb 层面已确认（2026-08-13）：语义标签全达标——阅读器顶栏「返回书库/目录/搜索/加书签」+ 底栏「字号±/排版」content-desc 齐全；翻页区「上一页/下一页」class=Button；排版面板 5 Slider 带 content-desc（字号 100%/行高 1.00×/段距/页边距/亮度跟随系统）+ Switch「保持常亮/音量键翻页」toggleable 合并节点 + OptionGroup（对齐/字体/翻页方式/主题/方向）checkable=true+checked 选中态正确，选项高 144px=48dp 达标。剩 TalkBack 实际播报 / 焦点顺序 / heading trait（uiautomator 不输出） / 高对比度肉眼 + REL-06 完整流程——须徐先生手指 |
 | SET-03 | ✅ | 正文随用户字体放大；关键操作不只靠颜色 / 手势表达。SET-03 刀：①正文跟随系统字号——`TypographyMappings.toEpubPreferences` 增 `systemFontScale` 参（fontSize × 系统字号倍率），ReaderScreen 据 `LocalDensity.fontScale` 推入 VM（镜像 setSystemDark 范式），WebView 不继承系统 fontScale 故需显式折算；②无障碍审查——SET-02 已覆盖大部分（色点名+RadioButton selected / OptionGroup selected / 边缘翻页按钮+音量键+滑动），补齐 SortMenuItem 选中态 stateDescription。TypographyMappingsTest +3 用例。✅（adb 真机回归 2026-08-13：`settings put system font_scale 1.5`→Activity 重建→正文放大，mcp 图像 diff 坐实 1.5× 字号生效；测量法注记：paginated 重排页字大→每页字数少，全页深色像素占比近似守恒，须用图像 diff/单字面积而非整页占比，详变更记录） |
 | SET-04 | ✅ | 本地内容默认不上传；无网络权限可完成核心阅读。合刀：`OfflineGuaranteeTest` 4 项固化不变量——源码 Manifest 零网络权限 / 合并后发布 Manifest 不含 INTERNET / catalog 无网络分析库 / 业务源码无直接网络调用（Readium `DefaultHttpClient` 白名单：无 INTERNET 兜底+本地惰性）。实测合并 Manifest 仅有依赖带入的 ACCESS_NETWORK_STATE+WAKE_LOCK（查询/保活，不含 INTERNET） |
@@ -114,8 +114,8 @@
 | READ-09 | ⬜ | 历史位置前进 / 后退、脚注弹层、外链确认 |
 | READ-10 | ⬜ | TTS 朗读（播放/暂停/调速/选声/定时，音频焦点抢占正确暂停） |
 | TYPE-05 | ⬜ | 自定义字体导入、按书保存排版偏好 |
-| DATA-03 | ⬜ | 全量备份 / 恢复（含数据库、设置、可选书籍文件，恢复前预览冲突） |
-| DATA-04 | ⬜ | 阅读时长、日 / 周趋势、连续阅读天数（仅前台实际阅读计时） |
+| DATA-03 | ✅ | 全量备份 / 恢复（含数据库、设置、可选书籍文件，恢复前预览冲突）。V1 第一刀（2026-08-14）：ZIP 打包（backup.json 全表 + settings + books/ + covers/，流式写 + 临时文件原子 copy 到 SAF）+ 恢复（preview 按 contentHash 分类 NEW/UNCHANGED/进度或笔记更新 + restore 三策略 SKIP/OVERWRITE/MERGE + Zip Slip 逐 entry 防护 + contentHash 去重复用本地 + 临时文件 rename）。BackupScreen（导出 SAF CreateDocument + 导入 SAF OpenDocument → 预览对话框三策略 RadioButton）+ 设置页入口。**真机回归（vivo V2329A）全过**：备份生成 `ebook-backup-20260814.zip`（4.86MB）解压验结构（backup.json schemaVersion=1 + books/{id}.txt 10.25MB + 全表导出 + settings 5 key）+ 恢复预览对话框（徐先生手指选 SAF 文件，弹「备份含 1 本，新增 0 冲突 0」+ 三策略）+ SKIP 策略恢复不破坏现有数据（books/progress/sessions 不变）+ 全程无 FATAL |
+| DATA-04 | ✅ | 阅读时长、日 / 周趋势、连续阅读天数（仅前台实际阅读计时）。V1 第一刀（2026-08-14）：Room v2→v3 加 reading_sessions 表（id/bookId/startedAt/endedAt/activeSeconds，CASCADE）+ 差值法计时（ReaderSessionRepository start/touch/end，静止封顶 5min 阈值裁剪超时尾巴）+ 生命周期接入（onResume 续接/onPause 结束/切书结束/onCleared 兜底）+ AppSettings 统计开关（默认 true，统计页 toggleable Switch）+ StreakCalculator 连续天数纯函数 + 详情页第6区块（本书总时长/今日）+ 全局统计页（今日/本周大字 + 7天 Canvas 柱状 + 连续天数 + 清空）。**真机回归（vivo V2329A）全过**：v2→v3 迁移 user_version=3 + reading_sessions 建表不丢数据 + 打开书停留退出产生会话 activeSeconds=9s + 详情页统计区块渲染 + 统计页（今日/本周/连续阅读1天/7天柱状日期标签/开关）+ 仪器迁移测试 migrate2To3 schema 与 3.json 一致 |
 | SET-06 | ⬜ | 平板 / 横屏 / 折叠屏自适应布局（列表-详情双栏） |
 | SET-07 | ⬜ | 墨水屏模式（关大面积动画 / 阴影 / 渐变，高对比刷新友好主题） |
 
@@ -166,6 +166,25 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-14）：**DATA-03/04 真机回归（vivo V2329A）全过 🚧→✅。P1 进度 1✅→3✅（IMP-07 + DATA-03 + DATA-04），合计 30✅ / 1🚧（仅剩 SET-02 TalkBack 手指项）。** 徐先生手指操作 + adb 客观验证混合。
+> **adb 自动验证**：① v2→v3 迁移——`user_version=3` + `reading_sessions` 表建出 + books/progress=1 不丢；② `connectedDebugAndroidTest` **5 项全过**（含 `migrate2To3_保数据_建readingSessions_schema与3json一致` 真机 schema 精确校验 + TYPE-04 三样本开书回归）；③ 计时闭环——打开《万相之王》停留 12s 退出，reading_sessions +1 条 `activeSeconds=9`；④ 详情页第6区块「阅读统计/总时长/今日」渲染 + 时长格式化（不足1分钟）正确；⑤ 统计页「今日阅读/本周阅读/连续阅读1天/最近7天柱状（8/8~8/14日期标签）」齐全；⑥ 设置页「阅读统计」+「备份与恢复」两导航行；⑦ 备份导出——SAF CreateDocument 弹出 + 保存生成 `ebook-backup-20260814.zip`（4.86MB）+ pull 解压验结构（backup.json `schemaVersion=1` + `books/{bookId}.txt` 10.25MB 书源 + 全表导出 books=1/progress=1/sessions=1 + settings 5 key 含 `app_reading_stats_enabled`/`scroll`/`theme`/`volume_key_paging`/`font_size`）；⑧ 本刀时间窗（15:00 后）logcat **零 FATAL**。
+> **徐先生手指验证**（adb 驱动不了系统 SAF UI，与 IMP-01 同类边界）：恢复预览——设置→备份→从备份恢复→选 `ebook-backup-20260814.zip`→弹「恢复预览 / 备份含 1 本书（新增 0，冲突 0）/ 三策略 RadioButton / 恢复」对话框→SKIP 策略恢复→Toast 反馈；统计页开关 toggle。
+> **adb 间接坐实恢复正确性**：恢复后书籍文件完整（万相之王 10253493 字节 = 与备份 zip 内一致）+ DB 未破坏（books=1/progress=1/sessions=1，SKIP 跳过冲突项不动现有数据）。
+> **遗留边界（已知，非 bug）**：① SAF 系统 UI 选文件 adb 驱动不稳（与 IMP-01/IMP-02 同类，定性手指项）——恢复链路数据正确性由 `BackupRestoreEndToEndTest` 端到端单测强覆盖（备份→清库→恢复全表回来 + 恶意 ZIP `../evil` 被拦截外部文件不落盘）；② 静止封顶 5min 阈值真机未实测耗时长，由 `ReadingSessionTimerTest` 6 项纯函数覆盖（含超阈值裁剪/未超全计/时钟异常兜底）；③ vivo run-as 假沙盒 find/路径不可靠（已知），用 `ls files/books/` + `sqlite3 databases/ebook.db` 直查绕过。设备测试数据保留（徐先生真实书库 + 1 条会话记录）。
+
+> 实现状态（2026-08-14）：**V1（P1）第一刀：DATA-04 阅读统计 + DATA-03 全量备份（含书籍文件）代码完成 ⬜→🚧。单测+编译+lint 全过（229 passed），真机回归待转 ✅。** MVP 27/27 闭合后开 V1，两件一刀合做（徐先生拍板：备份必须含书籍文件）。
+> **DATA-04 阅读时长**：① **数据层** Room v2→v3 加 `reading_sessions` 表（id/bookId/startedAt/endedAt/activeSeconds，ForeignKey CASCADE + @Index(bookId)），MIGRATION_2_3 的 CREATE TABLE SQL 逐字取自生成的 3.json（约束名 `index_reading_sessions_bookId` 与之一致）；5 个 DAO 补 `snapshotAll()`；2 份迁移测试（Robolectric + instrumented runMigrationsAndValidate(3)）。② **计时核心：差值法 + 静止封顶**（不用协程 delay 循环——进程被杀会丢，差值法在生命周期事件点一次性结算更可靠）。`computeActiveSeconds` 纯函数：`effectiveActive = min(endedAt, lastActiveAt + 5min阈值)`，超阈值尾巴裁掉（满足 design.md「无长时间静止时计时」）。`ReadingSessionRepository`（start/touch/end，clock+idGenerator 注入单测）。③ **生命周期接入** ReaderViewModel：`openPublication` markOpened 后 startSession（统计关时返回 null 全 no-op）/ `onLocatorUpdated` 翻页刷新 touchActive / onPause `endSessionIfActive` 结算落盘 / **onResume 续接**（关键修正：切通知栏回来 sessionId 已被 onPause 置 null，若不续接则继续读同一本的时间丢失）/ onCleared 兜底。不依赖 onCleared（强杀时 onPause 几乎必然触发更可靠）。④ **连续天数** `computeStreak` 纯函数（「今天还没断」口径：今天读了从今天起、否则从昨天起，纯 JVM 单测）。⑤ **UI** 详情页第6区块「阅读统计」（本书总时长+今日，combine 五路用 progress.observe 触发重查 session 时长）+ 全局统计页（今日/本周大字 + 最近7天 Canvas 手绘柱状 + 连续天数 + 清空确认框）+ 设置页入口 + `AppSettingsRepository.readingStatsEnabled`（默认 true）开关。
+> **DATA-03 全量备份（含书籍文件）**：① **备份格式** ZIP：`backup.json`（全表 books/progress/bookmarks/annotations/reading_sessions + `BACKUP_SCHEMA_VERSION=1`，locator 原样存 raw 字符串可逆还原）+ `settings.json`（DataStore asMap 快照）+ `books/{bookId}.{ext}` + `covers/{bookId}.png`。② **打包** `BackupUseCase`：ZipOutputStream 流式写（大 EPUB 不一次性载入）+ 累计字节数超 ~1GB 中止防膨胀 + 临时文件原子 copy 到 SAF URI（复用 ExportBookDataUseCase.writeAtomically 范式）。③ **恢复 + 冲突预览**（规格硬要求）`RestoreUseCase`：`preview(srcUri)` 按 contentHash 对比当前库分类 NEW/UNCHANGED/进度更新/笔记更新（`classifyConflict` 纯函数）→ `restore(srcUri, strategy)` 三策略（SKIP_CONFLICTS 只导新书 / OVERWRITE_ALL 覆盖 / MERGE_KEEP_NEWER 按 updatedAt 取新）。书籍文件解压回 `files/books/{hash}.{ext}`（**Zip Slip 逐 entry 校验** EpubSecurityValidator.isZipSlip + contentHash 去重复用本地 + 临时文件 rename）。settings 覆盖（SKIP 不动设置）。④ **UI** BackupScreen（导出 SAF CreateDocument + 导入 SAF OpenDocument → RestorePreviewDialog 冲突汇总+三策略 RadioButton + 进度条）+ 设置页入口。
+> **测试证据**：`:app:testDebugUnitTest` **229 passed**（0 fail/0 error/0 skip，本刀 +49：ReadingSessionDao 13 / Timer 6 / Streak 8 / BackupDto 序列化 4 / RestoreConflict 5 / RestoreZipSlip 4 / BackupRestoreEndToEnd 3 / detail stats 聚合 1 / formatDuration 5）+ 2 份迁移测试改完（Robolectric 跑过、instrumented 编译过待真机）+ `:app:assembleDebug` + `:app:lintDebug` + `:app:assembleDebugAndroidTest` **BUILD SUCCESSFUL**（lint 0 error，i18n zh/en key-parity 通过——新增 statistics_/duration_/detail_stats_/backup_ 中英齐全）。**端到端测试坐实**：造数据→backup 写 ZIP→清库→restore→全表回来（书/进度/书签/会话/settings）；恶意 ZIP（`../evil`）恢复被拦截、外部文件不落盘（红线 #4 防护生效）。
+> **🚧→✅ 收尾（真机回归）**：① [adb] 翻页后 `run-as sqlite3` 查 reading_sessions 有记录、SUM 递增；② [adb] 静置 >5min 退出 activeSeconds 裁剪；③ [徐先生手指] 详情页第6区块时长 + 统计页趋势柱/连续天数/开关/清空；④ [adb] 备份生成 zip 解压验 backup.json+books/+covers/；⑤ [徐先生手指] 清数据后恢复全回（书库/进度/书签/笔记/会话/TXT 能开）；⑥ [徐先生手指] 恢复预览冲突列表 + 三策略；⑦ [adb] 恶意 zip 恢复被拒。
+> **踩坑**：① BookDetailViewModel 加 sessionRepo 注入后，旧 BookDetailViewModelTest 构造缺参编译失败——补 PreferenceDataStoreFactory 造 appSettings 注入；② ReaderViewModel 用 ReadingSessionRepository 类型却漏 import（KSP 报非限定名不可解析）——补 import；③ v1→v2 迁移测试在 Room 升 v3 后因 addMigrations 只列 MIGRATION_1_2 而报「migration 1 to 3 required」——补全 1→2→3 完整迁移链；④ Button 无 leadingIcon 参数（M3 较新 API）——改 Row+Icon。
+
+> 实现状态（2026-08-14）：**SET-01 i18n 🚧→✅（adb 真机切英文逐页验过，vivo V2329A）。突破旧 adb 边界。** 此前 SET-01 卡在「adb 切不了非 root 真机 locale」——`setprop persist.sys.locale` 被拒、`cmd locale set-system-locales` 未知命令。本轮试 Android 13+ **per-app 语言**命令 `cmd locale set-app-locales com.xuziyue.ebook --locales en-US` → **通了**（`get-app-locales` 回显 `[en-US]`），app 实际切英文渲染，逐页 uiautomator dump 确认全英文。
+> **逐页验证（英文渲染实证）**：① **书库**（Library / All / Recent / Finished / Import / Grid / Sort / "Search title or author" / 已读完空态 `No finished books yet`）；② **详情页**（Continue reading / Reading progress / File info / Bookmarks · Notes / Language: zh-CN / Last read: 4 hours ago / Back）；③ **阅读器顶底栏**（Back to library / Contents / Search / Add bookmark / Next page / Previous page / Typography / Progress 11% / Bookmarks 0 / Notes 0 / Increase·Decrease font size）；④ **目录 sheet**（Contents / Close sheet，章节名是书籍数据保持中文正确）；⑤ **搜索 sheet** 4 状态文案（placeholder `Search this book…` / idle `Enter a keyword and press search...` / loading / no_match `No content matching "..."` 全在 values-en）；⑥ **进度 sheet**（Back 1% / Forward 1% / Jump to progress / Close）；⑦ **排版面板**（Font size / Line height / Page margins / Paragraph spacing + Alignment/Font/Paging/Theme + 滑块 content-desc `Font size 110%`/`Line height 1.00×`）+ **显示区**（Brightness / Keep screen on / Orientation / 四主题 Light/Sepia/Dark/Follow system）；⑧ **书签 sheet**（Bookmarks / `No bookmarks in this book`）；⑨ **笔记 sheet**（Notes & Highlights / Export）；⑩ **导出弹窗**（Choose export format / Export annotations / Markdown / JSON）；⑪ **删除确认框**（Delete book / Cancel）；⑫ **设置页**（Settings / Privacy Notice / Open Source Licenses / Crash Log / Record crash logs + 脱敏说明长文）；⑬ **隐私说明页** 四节（Data Storage / Network Permission / Crash Log / Third-Party Dependencies）；⑭ **许可证页**（26 条依赖列表 + "Tap to view the full license text"）；⑮ **排序菜单**（Recently read / Date imported / Title）。书名《万相之王》、章节名、语言码 zh-CN 等是**数据本身**保持中文/原值，非 i18n 缺失。
+> **辅助证据**：aapt2 解包装机 APK 见 175 个 `en` config、每 key 均含 zh-default+en 双值；`StringResourceKeysTest` 4 项 zh/en key-parity 单测过。**本轮无代码改动**（纯 adb 真机验证 + PROGRESS.md 文档更新，i18n 代码 + 资源 2026-08-12 已落地）。
+> **设备状态已还原**：`cmd locale set-app-locales com.xuziyue.ebook --locales ""` 恢复空（`get-app-locales` 回显 `[]`）+ `am force-stop`，下次打开是默认中文，无副作用。app 停在书库页，DB/书源文件未动。
+> **SET-02 维持 🚧**：SET-02 的语义标签/content-desc（2026-08-13 adb 已全验达标）仍 🚧——剩 TalkBack 实际播报 / 焦点顺序 / heading trait / 高对比度肉眼须徐先生手指。本轮不验 TalkBack（按徐先生要求跳过），REL-06 同理维持 ⬜。**MVP 28✅ + 1🚧（仅 SET-02 TalkBack 手指项），P0 几近全闭环。**
 
 > 实现状态（2026-08-13）：**IMP-07 删书首刀 ⬜→✅（单测+编译+lint+真机回归全过，vivo V2329A）。** 首页书库此前无任何删除入口（点击只进详情/阅读）；本地优先 app 下文件副本在私有目录不可见，没有 app 内删书入口就只能 `run-as` 手术（已踩 FK crash，见记忆 no-manual-db-surgery）。本次落地 IMP-07 首刀。
 > **口径**（徐先生拍板）：**直接删**——DB 记录（含进度/书签/笔记）+ 书源文件 + 封面一步到位；**不做** IMP-07 原文「仅移除 / 同时删副本」二选一（私有目录下留孤儿文件无意义、重导有 contentHash 去重）。**入口**：长按书卡弹 Material3 `AlertDialog` 确认框（列表/网格统一；点书卡仍进详情页，不破坏现有交互）。
