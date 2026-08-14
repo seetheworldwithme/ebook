@@ -12,6 +12,7 @@ import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
+import com.xuziyue.ebook.data.ReadingSessionRepository
 import com.xuziyue.ebook.data.export.ExportBookDataUseCase
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderCapabilities
@@ -88,6 +89,7 @@ class ReaderViewModel @Inject constructor(
     private val displaySettingsRepository: ReaderDisplaySettingsRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val annotationRepository: AnnotationRepository,
+    private val sessionRepository: ReadingSessionRepository,
     private val exportUseCase: ExportBookDataUseCase,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
@@ -133,6 +135,10 @@ class ReaderViewModel @Inject constructor(
     private val _activeBookId = MutableStateFlow<String?>(null)
     /** 最近 Locator（Flow 源，供 isBookmarked 响应式判定；[latestLocator] 取值直读 .value）。 */
     private val _latestLocator = MutableStateFlow<Locator?>(null)
+
+    // ===== DATA-04 阅读计时（会话起止 + 静止刷新） =====
+    /** 当前会话 id（startSession 返回；统计关时为 null，后续计时钩子全部 no-op）。 */
+    private var sessionId: String? = null
 
     /** 当前书书签列表（READ-06，DB 驱动回流）。 */
     val bookmarks: StateFlow<List<BookmarkItem>> = _activeBookId
@@ -231,6 +237,8 @@ class ReaderViewModel @Inject constructor(
         if (previousBookId != null && previousLocator != null) {
             viewModelScope.launch { progressRepository.save(previousBookId, previousLocator) }
         }
+        // DATA-04：切书前结束旧会话计时并落盘。
+        endSessionIfActive()
 
         openJob?.cancel()
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
@@ -293,6 +301,8 @@ class ReaderViewModel @Inject constructor(
                         progressRepository.delete(bookId)
                     }
                     bookRepository.markOpened(bookId) // lastOpenedAt + status=READING
+                    // DATA-04：会话起点（统计关时 startSession 返回 null，后续计时 no-op）。
+                    viewModelScope.launch { sessionId = sessionRepository.startSession(bookId) }
                     if (bookId != currentBookId) {
                         publication.close()
                         return@onSuccess
@@ -323,6 +333,8 @@ class ReaderViewModel @Inject constructor(
     fun onLocatorUpdated(sourceBookId: String, locator: Locator) {
         if (!acceptsLocator(currentBookId, sourceBookId)) return
         _latestLocator.value = locator
+        // DATA-04：翻页 / 滚动即活跃信号，刷新会话 lastActiveAt（仅内存）。
+        sessionRepository.touchActive(sessionId)
         val prog = locator.locations.totalProgression ?: 0.0
         _progressText.value = "${(prog * 100).toInt()}%"
         _progression.value = prog
@@ -339,6 +351,31 @@ class ReaderViewModel @Inject constructor(
         val locator = latestLocator ?: return
         val bookId = currentBookId ?: return
         viewModelScope.launch { progressRepository.save(bookId, locator) }
+    }
+
+    // ===== DATA-04 阅读计时：会话生命周期（onPause 结束 / onResume 续接） =====
+
+    /** 阅读页失去前台（onPause）时结束会话并落盘。切后台 / 弹通知栏 / 退出都走这里。 */
+    fun onReaderPaused() {
+        endSessionIfActive()
+    }
+
+    /**
+     * 阅读页恢复前台（onResume）时若仍有活跃书但会话已结束（sessionId==null），重新开始会话。
+     * 避免 onPause 置空后「切通知栏回来继续读同一本」的时间丢失。
+     */
+    fun onReaderResumed() {
+        if (sessionId == null && currentBookId != null) {
+            viewModelScope.launch { sessionId = sessionRepository.startSession(currentBookId!!) }
+        }
+    }
+
+    /** 结束当前会话并落盘（差值法结算 activeSeconds）；无活跃会话则 no-op。 */
+    private fun endSessionIfActive() {
+        if (sessionId == null) return
+        val id = sessionId
+        sessionId = null
+        viewModelScope.launch { sessionRepository.endSession(id) }
     }
 
     // ===== 排版偏好（实时生效 + 持久化保位，design.md §4.4 TYPE-01/02）=====
@@ -650,6 +687,7 @@ class ReaderViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         clearSearch() // 释放搜索 iterator（Closeable）
+        endSessionIfActive() // DATA-04：VM 销毁时兜底结束会话（强杀时主要靠 onPause）
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
     }
 

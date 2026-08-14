@@ -1,9 +1,12 @@
 package com.xuziyue.ebook.library
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.xuziyue.ebook.data.AppSettingsRepository
 import com.xuziyue.ebook.data.BookRepository
+import com.xuziyue.ebook.data.ReadingSessionRepository
 import com.xuziyue.ebook.data.db.AnnotationEntity
 import com.xuziyue.ebook.data.db.BookDatabase
 import com.xuziyue.ebook.data.db.BookEntity
@@ -11,6 +14,7 @@ import com.xuziyue.ebook.data.db.BookmarkEntity
 import com.xuziyue.ebook.data.db.ReadingProgressEntity
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReadingStatus
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -38,14 +42,20 @@ class BookDetailViewModelTest {
 
     private val dispatcher = UnconfinedTestDispatcher()
     private lateinit var db: BookDatabase
+    private lateinit var sessionRepo: ReadingSessionRepository
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         db = Room.inMemoryDatabaseBuilder(
-            ApplicationProvider.getApplicationContext(),
+            ctx,
             BookDatabase::class.java,
         ).allowMainThreadQueries().build()
+        val dataStore = PreferenceDataStoreFactory.create(
+            produceFile = { File(ctx.cacheDir, "detail-test.preferences_pb").also { it.delete() } },
+        )
+        sessionRepo = ReadingSessionRepository(db.readingSessionDao(), AppSettingsRepository(dataStore))
     }
 
     @After
@@ -71,6 +81,7 @@ class BookDetailViewModelTest {
         db.readingProgressDao(),
         db.bookmarkDao(),
         db.annotationDao(),
+        sessionRepo,
         SavedStateHandle(mapOf("bookId" to bookId)),
     )
 
@@ -127,5 +138,21 @@ class BookDetailViewModelTest {
 
         val state = vm("b1").uiState.first { !it.loading }
         assertEquals(0, state.annotationCount)
+    }
+
+    @Test
+    fun `聚合本书阅读时长 DATA-04`() = runTest {
+        seedBook("b1")
+        db.readingProgressDao().upsert(ReadingProgressEntity("b1", "loc", 0.1, 5000L, null))
+        // 两条会话：30s + 90s = 120s
+        db.readingSessionDao().upsert(
+            com.xuziyue.ebook.data.db.ReadingSessionEntity("s1", "b1", 0L, System.currentTimeMillis(), 30L),
+        )
+        db.readingSessionDao().upsert(
+            com.xuziyue.ebook.data.db.ReadingSessionEntity("s2", "b1", 0L, System.currentTimeMillis(), 90L),
+        )
+
+        val state = vm("b1").uiState.first { !it.loading }
+        assertEquals(120L, state.bookTotalSeconds)
     }
 }

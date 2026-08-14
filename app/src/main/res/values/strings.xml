@@ -204,6 +204,48 @@
     <string name="settings_crash_log_desc">崩溃日志仅保存在本地，不会上传。开启后，应用意外退出时会记录脱敏后的错误信息（不含正文、摘录和完整文件路径），可供手动分享给开发者。</string>
     <string name="settings_crash_log_enable">记录崩溃日志</string>
     <string name="settings_crash_log_share">分享崩溃日志</string>
+    <string name="settings_backup">备份与恢复</string>
+    <!-- 备份与恢复页（DATA-03） -->
+    <string name="backup_title">备份与恢复</string>
+    <string name="backup_back">返回设置</string>
+    <string name="backup_export">导出备份</string>
+    <string name="backup_export_desc">将书库、阅读进度、书签、笔记、阅读统计、设置和书籍文件打包为 ZIP。可用于换机或存档。</string>
+    <string name="backup_exporting">正在导出备份…</string>
+    <string name="backup_export_success">已导出 %1$d 本书、%2$d 个文件</string>
+    <string name="backup_failed">备份失败：%1$s</string>
+    <string name="backup_failed_unknown">备份失败（未知原因）</string>
+    <string name="backup_too_large">备份内容过大，已中止</string>
+    <string name="backup_import">从备份恢复</string>
+    <string name="backup_import_desc">选择一个 ebook-backup ZIP 恢复书库。恢复前会预览冲突。</string>
+    <string name="backup_preview_title">恢复预览</string>
+    <string name="backup_preview_summary">备份含 %1$d 本书（新增 %2$d，冲突 %3$d）。</string>
+    <string name="backup_strategy_skip">跳过冲突，只导入新书</string>
+    <string name="backup_strategy_overwrite">全部覆盖（以备份为准）</string>
+    <string name="backup_strategy_merge">合并取新（按更新时间）</string>
+    <string name="backup_restore">恢复</string>
+    <string name="backup_restore_success">已恢复：新增 %1$d 本，覆盖 %2$d 本，跳过 %3$d 本</string>
+    <string name="backup_invalid_zip">备份文件无效或已损坏</string>
+    <string name="error_backup_invalid_zip">备份文件无效或已损坏</string>
+    <string name="settings_statistics">阅读统计</string>
+    <!-- 阅读统计页（DATA-04） -->
+    <string name="statistics_title">阅读统计</string>
+    <string name="statistics_back">返回设置</string>
+    <string name="statistics_today">今日阅读</string>
+    <string name="statistics_week">本周阅读</string>
+    <string name="statistics_streak">连续阅读 %1$d 天</string>
+    <string name="statistics_daily_trend">最近 7 天</string>
+    <string name="statistics_clear">清空统计</string>
+    <string name="statistics_clear_confirm">将永久删除全部阅读时长记录，且无法恢复。书籍、进度、书签和笔记不受影响。</string>
+    <string name="statistics_disabled_hint">阅读统计已关闭。开启后将开始记录阅读时长。</string>
+    <string name="statistics_enable">记录阅读时长</string>
+    <!-- 时长格式化（DATA-04） -->
+    <string name="duration_minute_zero">不足 1 分钟</string>
+    <string name="duration_minute">%1$s 分钟</string>
+    <string name="duration_hour_minute">%1$s 小时 %2$s 分钟</string>
+    <!-- 详情页阅读统计区块（DATA-04） -->
+    <string name="detail_section_stats">阅读统计</string>
+    <string name="detail_stats_total">总时长</string>
+    <string name="detail_stats_today">今日</string>
     <!-- 隐私说明页 -->
     <string name="privacy_section_data">数据存储</string>
     <string name="privacy_data_body">本应用是一款本地优先的离线电子书阅读器。你的书籍文件、阅读进度、书签和高亮笔记全部存储在设备的本地数据库中，不会上传到任何服务器，也不需要注册账号。</string>

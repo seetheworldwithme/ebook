@@ -318,11 +318,15 @@ class ReaderFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         installVolumeKeyInterception()
+        // DATA-04：切通知栏回来继续读同一本时，会话可能已被 onPause 结束，此处续接。
+        viewModel.onReaderResumed()
     }
 
     override fun onPause() {
         super.onPause()
         removeVolumeKeyInterception()
+        // DATA-04：失去前台即结束会话计时并落盘（强杀时 onPause 几乎必然触发，比 onCleared 可靠）。
+        viewModel.onReaderPaused()
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.xuziyue.ebook.library
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xuziyue.ebook.R
 import com.xuziyue.ebook.model.Book
 import com.xuziyue.ebook.ui.BookCover
+import com.xuziyue.ebook.ui.formatDuration
 import com.xuziyue.ebook.ui.relativeTime
 import com.xuziyue.ebook.ui.resolve
 
@@ -195,6 +197,20 @@ private fun DetailContent(state: BookDetailUiState, padding: PaddingValues, onRe
             style = MaterialTheme.typography.bodyMedium,
         )
 
+        SectionDivider()
+
+        // ⑤ 阅读统计（DATA-04：本书总时长 + 今日时长）
+        SectionTitle(stringResource(R.string.detail_section_stats))
+        Spacer(Modifier.height(8.dp))
+        StatsRow(
+            label = stringResource(R.string.detail_stats_total),
+            value = formatDuration(state.bookTotalSeconds).resolve(context),
+        )
+        StatsRow(
+            label = stringResource(R.string.detail_stats_today),
+            value = formatDuration(state.bookTodaySeconds).resolve(context),
+        )
+
         Spacer(Modifier.height(24.dp))
 
         // ⑤ 继续阅读入口（有进度=继续，未读=开始）
@@ -227,6 +243,20 @@ private fun FileInfoRow(label: String, value: String) {
             modifier = Modifier.width(64.dp),
         )
         Text(value, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** 阅读统计行（DATA-04）：label 左、值右，值用 bodyMedium 突出。 */
+@Composable
+private fun StatsRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
     }
 }
 

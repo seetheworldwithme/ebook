@@ -8,13 +8,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * 应用级设置的持久化仓库（design.md §4.6 SET-05）。
+ * 应用级设置的持久化仓库（design.md §4.6 SET-05 / DATA-04）。
  *
  * 与 [ReaderTypographyRepository] / [ReaderDisplaySettingsRepository] 共享同一个全局 DataStore
  *（reader_settings.preferences_pb），用 `app_*` key 前缀避免与排版字段冲突。
  *
- * 目前仅持有一个开关：**崩溃日志**（红线 #8：仅在用户明确同意后启用，默认关闭）。
- * 该开关由 [com.xuziyue.ebook.EbookApp] 缓存到 @Volatile 字段，崩溃时同步读取决定是否落盘。
+ * 持有：
+ * - **崩溃日志**开关（红线 #8：仅在用户明确同意后启用，默认关闭）。由 [com.xuziyue.ebook.EbookApp]
+ *   缓存到 @Volatile 字段，崩溃时同步读取决定是否落盘。
+ * - **阅读统计**开关（DATA-04：默认开——统计对自用有价值；用户可关 / 清空）。
  */
 class AppSettingsRepository(
     private val dataStore: DataStore<Preferences>,
@@ -27,7 +29,15 @@ class AppSettingsRepository(
         dataStore.edit { it[KEY_CRASH_LOG] = enabled }
     }
 
+    /** 阅读统计开关（默认 true——DATA-04，对自用有价值；关时阅读器不创建会话、不计时）。 */
+    val readingStatsEnabled: Flow<Boolean> = dataStore.data.map { it[KEY_READING_STATS] ?: true }
+
+    suspend fun setReadingStatsEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEY_READING_STATS] = enabled }
+    }
+
     private companion object {
         val KEY_CRASH_LOG = booleanPreferencesKey("app_crash_log_enabled")
+        val KEY_READING_STATS = booleanPreferencesKey("app_reading_stats_enabled")
     }
 }

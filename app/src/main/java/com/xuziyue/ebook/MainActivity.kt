@@ -202,6 +202,8 @@ private fun AppRoot(
                 onBack = { navController.popBackStack() },
                 onOpenPrivacy = { navController.navigate("privacy") },
                 onOpenLicenses = { navController.navigate("licenses") },
+                onOpenStatistics = { navController.navigate("statistics") },
+                onOpenBackup = { navController.navigate("backup") },
             )
         }
         composable("privacy") {
@@ -209,6 +211,18 @@ private fun AppRoot(
         }
         composable("licenses") {
             LicensesScreen(onBack = { navController.popBackStack() })
+        }
+        // DATA-04 阅读统计
+        composable("statistics") {
+            com.xuziyue.ebook.statistics.StatisticsScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        // DATA-03 备份与恢复
+        composable("backup") {
+            com.xuziyue.ebook.backup.BackupScreen(
+                onBack = { navController.popBackStack() },
+            )
         }
     }
 }

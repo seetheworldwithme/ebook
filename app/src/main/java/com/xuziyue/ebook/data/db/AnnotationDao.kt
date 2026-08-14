@@ -47,4 +47,8 @@ interface AnnotationDao {
     /** 软删除同书全部活跃批注（"清空"操作；observe 回流清 UI）。 */
     @Query("UPDATE annotations SET deletedAt = :deletedAt WHERE bookId = :bookId AND deletedAt IS NULL")
     suspend fun softDeleteAllForBook(bookId: String, deletedAt: Long)
+
+    /** 全表快照（全量备份 DATA-03 用，含软删行；非响应式）。 */
+    @Query("SELECT * FROM annotations")
+    suspend fun snapshotAll(): List<AnnotationEntity>
 }

@@ -204,6 +204,48 @@
     <string name="settings_crash_log_desc">Crash logs are stored locally only and never uploaded. When enabled, the app records anonymized error info on unexpected exits (no book content, excerpts, or full file paths), which you can manually share with the developer.</string>
     <string name="settings_crash_log_enable">Record crash logs</string>
     <string name="settings_crash_log_share">Share crash log</string>
+    <string name="settings_backup">Backup &amp; Restore</string>
+    <!-- Backup & Restore (DATA-03) -->
+    <string name="backup_title">Backup &amp; Restore</string>
+    <string name="backup_back">Back to settings</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_export_desc">Packages your library, reading progress, bookmarks, notes, reading stats, settings and book files into a ZIP. Useful for moving to a new device or archiving.</string>
+    <string name="backup_exporting">Exporting backup…</string>
+    <string name="backup_export_success">Exported %1$d books, %2$d files</string>
+    <string name="backup_failed">Backup failed: %1$s</string>
+    <string name="backup_failed_unknown">Backup failed (unknown reason)</string>
+    <string name="backup_too_large">Backup content too large, aborted</string>
+    <string name="backup_import">Restore from backup</string>
+    <string name="backup_import_desc">Select an ebook-backup ZIP to restore your library. Conflicts are previewed first.</string>
+    <string name="backup_preview_title">Restore preview</string>
+    <string name="backup_preview_summary">Backup contains %1$d books (new: %2$d, conflicts: %3$d).</string>
+    <string name="backup_strategy_skip">Skip conflicts, import new books only</string>
+    <string name="backup_strategy_overwrite">Overwrite all (backup wins)</string>
+    <string name="backup_strategy_merge">Merge, keep newer (by update time)</string>
+    <string name="backup_restore">Restore</string>
+    <string name="backup_restore_success">Restored: %1$d new, %2$d overwritten, %3$d skipped</string>
+    <string name="backup_invalid_zip">Backup file is invalid or corrupted</string>
+    <string name="error_backup_invalid_zip">Backup file is invalid or corrupted</string>
+    <string name="settings_statistics">Reading Statistics</string>
+    <!-- Reading statistics (DATA-04) -->
+    <string name="statistics_title">Reading Statistics</string>
+    <string name="statistics_back">Back to settings</string>
+    <string name="statistics_today">Today</string>
+    <string name="statistics_week">This week</string>
+    <string name="statistics_streak">%1$d day streak</string>
+    <string name="statistics_daily_trend">Last 7 days</string>
+    <string name="statistics_clear">Clear stats</string>
+    <string name="statistics_clear_confirm">This will permanently delete all reading time records. Your books, progress, bookmarks and notes are not affected.</string>
+    <string name="statistics_disabled_hint">Reading statistics are off. Turn on to start tracking reading time.</string>
+    <string name="statistics_enable">Track reading time</string>
+    <!-- Duration formatting (DATA-04) -->
+    <string name="duration_minute_zero">Less than a minute</string>
+    <string name="duration_minute">%1$s min</string>
+    <string name="duration_hour_minute">%1$s hr %2$s min</string>
+    <!-- Detail reading stats section (DATA-04) -->
+    <string name="detail_section_stats">Reading Stats</string>
+    <string name="detail_stats_total">Total</string>
+    <string name="detail_stats_today">Today</string>
     <!-- Privacy page -->
     <string name="privacy_section_data">Data Storage</string>
     <string name="privacy_data_body">This app is a local-first, offline ebook reader. Your book files, reading progress, bookmarks, and highlight notes are all stored in a local database on your device. Nothing is uploaded to any server, and no account is required.</string>

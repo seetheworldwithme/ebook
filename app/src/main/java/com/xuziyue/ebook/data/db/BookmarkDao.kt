@@ -30,4 +30,8 @@ interface BookmarkDao {
 
     @Query("DELETE FROM bookmarks WHERE bookId = :bookId")
     suspend fun deleteAllForBook(bookId: String)
+
+    /** 全表快照（全量备份 DATA-03 用，非响应式）。 */
+    @Query("SELECT * FROM bookmarks")
+    suspend fun snapshotAll(): List<BookmarkEntity>
 }

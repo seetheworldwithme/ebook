@@ -15,7 +15,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -56,6 +58,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenPrivacy: () -> Unit,
     onOpenLicenses: () -> Unit,
+    onOpenStatistics: () -> Unit,
+    onOpenBackup: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val crashLogEnabled by viewModel.crashLogEnabled.collectAsStateWithLifecycle()
@@ -84,6 +88,26 @@ fun SettingsScreen(
                     iconDesc = stringResource(R.string.settings_privacy),
                     title = stringResource(R.string.settings_privacy),
                     onClick = onOpenPrivacy,
+                )
+                HorizontalDivider()
+            }
+            // 阅读统计（DATA-04）
+            item {
+                SettingsNavRow(
+                    icon = Icons.Default.Insights,
+                    iconDesc = stringResource(R.string.settings_statistics),
+                    title = stringResource(R.string.settings_statistics),
+                    onClick = onOpenStatistics,
+                )
+                HorizontalDivider()
+            }
+            // 备份与恢复（DATA-03）
+            item {
+                SettingsNavRow(
+                    icon = Icons.Default.CloudSync,
+                    iconDesc = stringResource(R.string.settings_backup),
+                    title = stringResource(R.string.settings_backup),
+                    onClick = onOpenBackup,
                 )
                 HorizontalDivider()
             }
