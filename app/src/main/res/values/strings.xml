@@ -202,6 +202,28 @@
     <string name="import_error_corrupt">文件已损坏或格式不正确，无法导入</string>
     <string name="import_error_insufficient_space">存储空间不足，请清理后重试</string>
 
+    <!-- 目录导入（IMP-06） -->
+    <string name="folder_import_title">目录导入</string>
+    <string name="folder_import_directory">授权目录</string>
+    <string name="folder_import_directory_desc">授权一个文件夹，自动导入其中的 EPUB / TXT（含子目录）。文件复制到应用私有目录后仍可阅读，原文件不受影响。</string>
+    <string name="folder_import_pick">选择目录</string>
+    <string name="folder_import_change">更换目录</string>
+    <string name="folder_import_revoke">解除授权</string>
+    <string name="folder_import_revoke_title">解除目录授权？</string>
+    <string name="folder_import_revoke_desc">已导入的书不受影响，只断开与该目录的关联；下次使用需重新授权。</string>
+    <string name="folder_import_revoke_confirm">解除授权</string>
+    <string name="folder_import_scan">扫描</string>
+    <string name="folder_import_scan_now">立即扫描</string>
+    <string name="folder_import_scanning">正在扫描…</string>
+    <string name="folder_import_report_title">扫描结果</string>
+    <string name="folder_import_report_imported">新增导入</string>
+    <string name="folder_import_report_exists">已在书库</string>
+    <string name="folder_import_report_skipped">未变化跳过</string>
+    <string name="folder_import_report_failed">失败</string>
+    <string name="folder_import_report_truncated">目录条目过多，本次扫描已截断</string>
+    <string name="folder_import_auto_scan">启动时自动扫描</string>
+    <string name="folder_import_auto_scan_desc">每次启动应用时静默扫描授权目录，自动导入新增或变化的文件</string>
+
     <!-- 错误（用户可读提示） -->
     <string name="error_book_not_found">书籍不存在</string>
     <string name="error_book_missing">书籍不存在：%1$s</string>
@@ -240,6 +262,7 @@
     <string name="settings_crash_log_enable">记录崩溃日志</string>
     <string name="settings_crash_log_share">分享崩溃日志</string>
     <string name="settings_backup">备份与恢复</string>
+    <string name="settings_folder_import">目录导入</string>
     <!-- 备份与恢复页（DATA-03） -->
     <string name="backup_title">备份与恢复</string>
     <string name="backup_back">返回设置</string>

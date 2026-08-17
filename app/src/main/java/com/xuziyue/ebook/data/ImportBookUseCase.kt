@@ -12,6 +12,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -32,6 +34,9 @@ class ImportBookUseCase(
     @ApplicationContext private val context: Context,
 ) {
 
+    /** 导入互斥：串行化手动导入与目录扫描（IMP-06）——并发 insert 失败回滚时可能误删对方的书文件。 */
+    private val importMutex = Mutex()
+
     /** 导入结果三态（重复导入复用已有 bookId）。 */
     sealed class Outcome {
         data class Imported(val bookId: String) : Outcome()
@@ -40,10 +45,12 @@ class ImportBookUseCase(
     }
 
     suspend fun importUri(uri: Uri): Outcome = withContext(Dispatchers.IO) {
-        val imported = importer.importFromUri(uri).getOrElse {
-            return@withContext mapImportError(it, R.string.import_failed)
+        importMutex.withLock {
+            val imported = importer.importFromUri(uri).getOrElse {
+                return@withLock mapImportError(it, R.string.import_failed)
+            }
+            commit(imported.contentHash, imported.file)
         }
-        commit(imported.contentHash, imported.file)
     }
 
     private suspend fun commit(hash: String, file: File): Outcome {

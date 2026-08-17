@@ -9,7 +9,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * [MIGRATION_1_2]：v1（books + reading_progress）→ v2 加 bookmarks + annotations（READ-06/07）。
  * [MIGRATION_2_3]：v2 → v3 加 reading_sessions（DATA-04 阅读时长）。
  * [MIGRATION_3_4]：v3 → v4 加 collections + collection_books（LIB-05 书架/标签/收藏）+ 插入系统书架「收藏」。
- * CREATE TABLE / INDEX 的 SQL 逐字取自 Room 生成的 `app/schemas/.../{2,3,4}.json`，保证列序 / 类型亲和 / 约束名与 Room 期望一致
+ * [MIGRATION_4_5]：v4 → v5 加 import_sources（IMP-06 目录增量扫描来源映射）。
+ * CREATE TABLE / INDEX 的 SQL 逐字取自 Room 生成的 `app/schemas/.../{2,3,4,5}.json`，保证列序 / 类型亲和 / 约束名与 Room 期望一致
  * （否则运行时抛 `Migration didn't properly handle`）。
  */
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -128,6 +129,37 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
             INSERT INTO collections(id, name, sortOrder, createdAt, kind)
             VALUES('system-favorite', '收藏', ${Long.MIN_VALUE}, 0, 'SYSTEM_FAVORITE')
             """.trimIndent(),
+        )
+    }
+}
+
+/**
+ * v4 → v5：加 import_sources 表（IMP-06 目录增量扫描来源映射）。
+ *
+ * CREATE TABLE / INDEX 的 SQL 逐字取自 Room 生成的 `app/schemas/.../5.json`。
+ * 表为空表新增（无历史数据回填），FK 指向 books(id) CASCADE——app 内删书自动清记录。
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `import_sources` (
+                `id` TEXT NOT NULL,
+                `sourceUri` TEXT NOT NULL,
+                `bookId` TEXT NOT NULL,
+                `fileSize` INTEGER NOT NULL,
+                `lastModified` INTEGER NOT NULL,
+                `scannedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`id`),
+                FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_import_sources_sourceUri` ON `import_sources` (`sourceUri`)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_import_sources_bookId` ON `import_sources` (`bookId`)",
         )
     }
 }

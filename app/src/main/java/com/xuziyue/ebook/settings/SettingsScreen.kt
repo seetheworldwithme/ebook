@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,6 +61,7 @@ fun SettingsScreen(
     onOpenLicenses: () -> Unit,
     onOpenStatistics: () -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenFolderImport: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val crashLogEnabled by viewModel.crashLogEnabled.collectAsStateWithLifecycle()
@@ -108,6 +110,16 @@ fun SettingsScreen(
                     iconDesc = stringResource(R.string.settings_backup),
                     title = stringResource(R.string.settings_backup),
                     onClick = onOpenBackup,
+                )
+                HorizontalDivider()
+            }
+            // 目录导入（IMP-06）
+            item {
+                SettingsNavRow(
+                    icon = Icons.Default.FolderOpen,
+                    iconDesc = stringResource(R.string.settings_folder_import),
+                    title = stringResource(R.string.settings_folder_import),
+                    onClick = onOpenFolderImport,
                 )
                 HorizontalDivider()
             }

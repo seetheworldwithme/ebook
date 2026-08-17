@@ -214,6 +214,7 @@ private fun AppRoot(
                 onOpenLicenses = { navController.navigate("licenses") },
                 onOpenStatistics = { navController.navigate("statistics") },
                 onOpenBackup = { navController.navigate("backup") },
+                onOpenFolderImport = { navController.navigate("folder_import") },
             )
         }
         composable("privacy") {
@@ -231,6 +232,12 @@ private fun AppRoot(
         // DATA-03 备份与恢复
         composable("backup") {
             com.xuziyue.ebook.backup.BackupScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        // IMP-06 目录导入
+        composable("folder_import") {
+            com.xuziyue.ebook.folderimport.FolderImportScreen(
                 onBack = { navController.popBackStack() },
             )
         }

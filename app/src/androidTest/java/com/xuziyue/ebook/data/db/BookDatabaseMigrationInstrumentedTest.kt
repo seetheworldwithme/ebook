@@ -23,6 +23,8 @@ import org.junit.runner.RunWith
  * 覆盖：
  * - migrate1To2：v1→v2（加 bookmarks/annotations）。
  * - migrate2To3：v2→v3（加 reading_sessions，DATA-04）。
+ * - migrate3To4：v3→v4（加 collections/collection_books，LIB-05）。
+ * - migrate4To5：v4→v5（加 import_sources，IMP-06）。
  *
  * 全程跑在真机真实 SQLite 上（比单测更强：真实数据 + 真实 SQLite + Room 运行时校验）。
  *
@@ -145,6 +147,35 @@ class BookDatabaseMigrationInstrumentedTest {
         db.close()
     }
 
+    @Test
+    fun migrate4To5_保数据_建importSources_schema与5json一致() {
+        // 1. 由 4.json 建真实 v4 库（七表）+ 灌 v4 种子（书）
+        helper.createDatabase(TEST_DB, 4).use { db -> seedV4Data(db) }
+
+        // 2. 跑 MIGRATION_4_5 并与 5.json 逐字段校验（核心：schema 精确匹配）
+        val db = helper.runMigrationsAndValidate(TEST_DB, 5, true, MIGRATION_4_5)
+
+        // 3. 旧数据未丢
+        assertEquals("目录导入测试书", string(db, "SELECT title FROM books WHERE id = ?", "b5"))
+
+        // 4. 新表 import_sources 已建且为空
+        assertEquals(0L, count(db, "import_sources"))
+
+        // 5. 新表可写
+        db.execSQL(
+            "INSERT INTO import_sources(id,sourceUri,bookId,fileSize,lastModified,scannedAt) VALUES(?,?,?,?,?,?)",
+            arrayOf<Any?>("is1", "content://tree/x/document/y", "b5", 100L, 200L, 300L),
+        )
+        assertEquals(1L, count(db, "import_sources"))
+
+        // 6. FK CASCADE 在迁移后库仍生效（删书连带删来源记录）
+        db.execSQL("PRAGMA foreign_keys = ON")
+        db.execSQL("DELETE FROM books WHERE id = ?", arrayOf<Any?>("b5"))
+        assertEquals(0L, count(db, "import_sources"))
+
+        db.close()
+    }
+
     // ===== 种子 / 查询小工具 =====
 
     /** 灌 v1 种子：1 本书 + 1 条进度（列对齐 1.json / 当前 BookEntity，v2 未改这两张表）。 */
@@ -197,6 +228,19 @@ class BookDatabaseMigrationInstrumentedTest {
             arrayOf<Any?>(
                 "b4", "hash4", "书架测试书", "[\"作者\"]",
                 null, null, "EPUB", "application/epub+zip", "/b4.epub",
+                0L, null, 0L, null, "UNREAD",
+            ),
+        )
+    }
+
+    /** 灌 v4 种子：1 本书（v4 已含 collections/collection_books 空表，种子只需书）。 */
+    private fun seedV4Data(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "INSERT INTO books(id,contentHash,title,authors,description,language,format,mediaType,filePath,fileSize,coverPath,importedAt,lastOpenedAt,status) " +
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>(
+                "b5", "hash5", "目录导入测试书", "[\"作者\"]",
+                null, null, "EPUB", "application/epub+zip", "/b5.epub",
                 0L, null, 0L, null, "UNREAD",
             ),
         )

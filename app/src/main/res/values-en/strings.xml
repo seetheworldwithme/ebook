@@ -202,6 +202,28 @@
     <string name="import_error_corrupt">File is corrupted or invalid, cannot import</string>
     <string name="import_error_insufficient_space">Insufficient storage space, please free up space and retry</string>
 
+    <!-- Folder import (IMP-06) -->
+    <string name="folder_import_title">Folder import</string>
+    <string name="folder_import_directory">Authorized folder</string>
+    <string name="folder_import_directory_desc">Authorize a folder to auto-import EPUB / TXT files in it (including subfolders). Files are copied into app-private storage so they stay readable; originals are untouched.</string>
+    <string name="folder_import_pick">Choose folder</string>
+    <string name="folder_import_change">Change folder</string>
+    <string name="folder_import_revoke">Revoke access</string>
+    <string name="folder_import_revoke_title">Revoke folder access?</string>
+    <string name="folder_import_revoke_desc">Imported books are unaffected; this only unlinks the folder. You will need to authorize again next time.</string>
+    <string name="folder_import_revoke_confirm">Revoke</string>
+    <string name="folder_import_scan">Scan</string>
+    <string name="folder_import_scan_now">Scan now</string>
+    <string name="folder_import_scanning">Scanning…</string>
+    <string name="folder_import_report_title">Scan result</string>
+    <string name="folder_import_report_imported">Newly imported</string>
+    <string name="folder_import_report_exists">Already in library</string>
+    <string name="folder_import_report_skipped">Skipped (unchanged)</string>
+    <string name="folder_import_report_failed">Failed</string>
+    <string name="folder_import_report_truncated">Too many entries in the folder; this scan was truncated</string>
+    <string name="folder_import_auto_scan">Auto-scan on launch</string>
+    <string name="folder_import_auto_scan_desc">Silently scan the authorized folder on every app launch and import new or changed files</string>
+
     <!-- Errors (user-readable) -->
     <string name="error_book_not_found">Book not found</string>
     <string name="error_book_missing">Book not found: %1$s</string>
@@ -240,6 +262,7 @@
     <string name="settings_crash_log_enable">Record crash logs</string>
     <string name="settings_crash_log_share">Share crash log</string>
     <string name="settings_backup">Backup &amp; Restore</string>
+    <string name="settings_folder_import">Folder Import</string>
     <!-- Backup & Restore (DATA-03) -->
     <string name="backup_title">Backup &amp; Restore</string>
     <string name="backup_back">Back to settings</string>

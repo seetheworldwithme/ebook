@@ -19,11 +19,11 @@
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
 | P0（MVP 必做） | 28 | 27 | 1 |
-| P1（首个增强版） | 11 | 5 | 0 |
+| P1（首个增强版） | 11 | 6 | 0 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 32 | 1 |
+| 合计 | 42 | 33 | 1 |
 
-> 当前进度：32 ✅ / 1 🚧（仅剩 SET-02 TalkBack 手指项；LIB-05/06 真机回归全过转 ✅）。详见文末变更记录。
+> 当前进度：33 ✅ / 1 🚧（仅剩 SET-02 TalkBack 手指项；IMP-06 真机回归全过转 ✅）。详见文末变更记录。
 
 ---
 
@@ -107,7 +107,7 @@
 
 | ID | 状态 | 需求 |
 | --- | --- | --- |
-| IMP-06 | ⬜ | 用户授权指定目录并增量扫描（SAF 目录授权） |
+| IMP-06 | ✅ | 用户授权指定目录并增量扫描（SAF 目录授权）。代码 + 单测 272 全绿（2026-08-17），**真机回归（vivo V2329A）全过**：v4→v5 迁移保数据 / 首扫 3 新增（含子目录递归，pdf 跳过）/ 二次扫描全 skipped / mtime 变化重导（contentHash 去重兜底）/ 删书 CASCADE 清记录 + 重扫复活 / 冷启动自动扫描（开关双向验证）/ 全程零 FATAL |
 | IMP-07 | ✅ | 删除书籍时选「仅移除」或「同时删 App 内副本」。首刀（2026-08-13）：首页长按书卡弹确认框直接删（DB+文件一起删，ForeignKey CASCADE 自动清进度/书签/笔记）；经徐先生确认跳过「仅移除/删副本」二选一（私有目录下留孤儿文件无意义、重导有 contentHash 去重）。真机回归（vivo V2329A）全过：长按确认删除（DB-1 + 书源/封面文件删 + 列表消失）、取消防误删、FATAL=0。详见变更记录 |
 | LIB-05 | ✅ | 收藏、标签、自定义书架。V1 一刀（2026-08-14）：决策口径——收藏=特殊书架「收藏」(SYSTEM_FAVORITE 固定 id)、标签=书架合一(只 Collection/CollectionBook 一套表)。Room v3→v4 加 collections+collection_books 两表(双向 FK CASCADE)+系统书架迁移时插入+CollectionRepository(clock/idGenerator 注入)+书架 Tab(第4个)+书架列表/书架内浏览+CollectionPickerSheet(多选+内联新建)+详情页 chips+收藏 toggle。**真机回归（vivo V2329A）全过**：迁移 user_version=4 + 系统书架插入 + CASCADE 删书架清关系书不删 + 书架 Tab/列表/新建/重命名/删除 + 详情页 chips + 收藏 toggle(修复图标 tint 后灰↔蓝双向清晰) |
 | LIB-06 | ✅ | 批量选择、移动到书架、删除、重新提取元数据。V1 一刀（2026-08-14）：批量选择/移动到书架/批量删除已完成——长按进入选择模式(combinedClickable 复用 IMP-07)+上下文操作栏(全选/加入书架/删除/取消)+批量加入(DAO IGNORE 幂等)+批量删除(汇总成功数)。**重新提取元数据推后单独处理**(依赖读源文件重跑 ExtractUseCase，与书架正交)。**真机回归（vivo V2329A）全过**：长按进批量模式 + 选多本 + 加入书架书架内可见 + 批量删除确认+汇总 |
@@ -166,6 +166,23 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-17）：**IMP-06 目录授权 + 增量扫描真机回归（vivo V2329A）全过 🚧→✅。P1 进度 5✅→6✅，合计 33✅ / 1🚧（仅剩 SET-02 TalkBack 手指项）。** adb 客观验证 + 徐先生手指（SAF 授权弹窗）混合。
+> **真机验证明细**：① **v4→v5 迁移**——覆盖安装冷启动 `user_version 4→5` + books/progress/collections 不丢（1/1/2）+ `import_sources` 表结构与 5.json 逐字段一致（含 sourceUri 唯一索引）+ 零 FATAL；② **仪器迁移测试 `connectedDebugAndroidTest` 4/4 全过**（含 migrate4To5 真机 schema 精确校验）；③ **首扫**（徐先生手指授权 `Download/ebook-scan-test` 后点「立即扫描」）——报告 新增3/已在库0/跳过0/失败0，DB books=3 + import_sources=3 条（sourceUri=DocumentsContract document Uri、fileSize/lastModified 快照齐全）+ 书源文件按 contentHash 落 `files/books/`，**子目录 sub/ 里 cole FXL 递归导入**、`fake.pdf` 静默跳过不计失败；④ **二次扫描秒回**——新增0/跳过3/失败0，记录不重复（增量判定生效）；⑤ **mtime 变化检测**——adb touch 源 epub 后重扫 → 已在库1（重导→contentHash 去重命中 AlreadyExists 路径并刷新记录）+ books 仍 3 不重复入库；⑥ **删书 CASCADE + 重扫复活**——app 内长按删除 Alice（books 3→2、import_sources 3→2 记录被 FK 连带清）→ 重扫 新增1（Alice 复活，目录同步语义）；⑦ **冷启动自动扫描**——push 新 ruby.epub + force-stop 冷启 → 8s 内自动入库（3→4），logcat `IMP06 冷启动扫描完成：imported=1 exists=0 skipped=3 failed=0`（只记数量不记文件名，红线 #8）；⑧ **开关反向**——关自动扫描后冷启 + push 新书 → 不扫（books 不变、无 IMP06 日志），开关恢复开后再冷启 → rtl.epub 自动入库（4→5）；⑨ 全程（含迁移/扫描/删除/冷启）**零 FATAL**。
+> **测试副作用披露**：connectedDebugAndroidTest 会卸载重装 app 清掉真实书库（既有 Gradle 行为，与 DATA-04 那轮相同）——本轮在空库上完成全部扫描验证，设备现留 5 本扫描测试书（山海經/Cole/Alice/拼音注音/RTL），属公有领域样本可自留，不需要可在 app 内长按删除；测试目录 `/sdcard/Download/ebook-scan-test/` 已清理。设备 app 停在目录导入页、自动扫描开关保持开（默认态）。
+> **遗留边界（已知，非 bug）**：① SAF 目录授权弹窗 adb 驱动不了（与 IMP-01 同类边界），由徐先生手指完成；② 更换目录时旧记录不清（sourceUri 不同自然判新，「删了不回来」的 tombstone 留后续按需做）；③ 仪器测试清库是 Gradle 默认行为，未折腾 preserve。
+
+> 实现状态（2026-08-17）：**IMP-06 目录授权 + 增量扫描代码完成 ⬜→🚧（单测+编译+lint 全绿，真机回归待做）。**
+> **数据层（Room v4→v5，红线 #6）**：新增 `ImportSourceEntity`（id/sourceUri 唯一索引/bookId FK CASCADE/fileSize/lastModified/scannedAt）+ `ImportSourceDao`（findBySourceUri/upsert/快照）+ `MIGRATION_4_5`（SQL 逐字取自生成的 5.json）；`DatabaseModule` 迁移链补到 1→5。**增量语义**：sourceUri 是判定键，size+mtime 快照比对——均未变跳过（不重读内容）、变化重导（contentHash 去重兜底）、AlreadyExists 也落记录、Failed 不落（可重试）、单文件失败不中断；删书 FK CASCADE 清记录 → 重扫复活（目录同步语义，「删了不回来」的 tombstone 留后续）。
+> **扫描层**：`SafDocumentEnumerator`（`buildChildDocumentsUriUsingTree` BFS 递归，一次查询拿 DISPLAY_NAME/SIZE/LAST_MODIFIED/MIME_TYPE 避免 N+1，跳隐藏文件/隐藏目录，5000 条目上限截断防病态目录树，根授权 SecurityException 抛出→UI 引导重授权、子目录异常跳过）+ `DirectoryScanner` 纯编排（lambda 注入 DAO/导入函数，纯 JVM 可测）+ `ScanDirectoryUseCase`（Mutex 串行化防手动/自动扫描并发）。
+> **设置持久化**：`AppSettingsRepository` 加 `app_import_tree_uri`(String?，null=未授权) + `app_import_auto_scan`(Boolean 默认 true)。
+> **导入链路加固（顺手修既有隐患）**：`ImportBookUseCase.importUri` 加 Mutex 串行化——扫描与手动导入并发时，insert 失败回滚可能误删对方的书文件。
+> **UI**：设置页新增「目录导入」行（FolderOpen 图标）→ `FolderImportScreen`（未授权=单个「选择目录」主按钮；已授权=目录名+更换/解除授权+立即扫描+进度条+报告卡（新增/已在库/跳过/失败/截断提示）+自动扫描开关）；SAF launcher 用 `OpenDocumentTree`（红线 #3：不申请所有文件访问）；解除授权走确认框。`FolderImportViewModel`：onDirectoryPicked = release 旧授权 → takePersistableUriPermission → 持久化。
+> **冷启动自动扫描**：`EbookApp.onCreate` 末尾后台协程（自动扫描开 + 有授权时静默扫一次，书库 Room Flow 自动回推）；授权失效静默不打扰；日志只记数量不记文件名（红线 #8）。
+> **测试（+23 新增，全绿）**：DirectoryScannerTest 11（新文件落记录/未变跳过不调导入/size 变/mtime 变/未知 size 重导/AlreadyExists 落记录+二次跳过/Failed 不落/失败不中断/记录 id 复用/bookId 切换/混合统计）+ ImportSourceDaoTest 5（upsert/覆盖/查无/CASCADE/多行）+ AppSettingsRepositoryTest 5（tree_uri 默认 null/往返/null 移除；auto_scan 默认/往返）+ 迁移测试 v4→v5 双覆盖（Robolectric v4 库造表→迁移→保数据+upsert 覆盖+CASCADE；仪器 `migrate4To5_保数据_建importSources_schema与5json一致` 编译过待真机）+ SchemaExportedTest 8 表断言 + 既有迁移测试链补全到 v5（MEMORY [[room-migration-test-full-chain]] 坑）。
+> **测试证据**：`:app:testDebugUnitTest` **272 passed**（0 fail/0 error/0 skip）+ `:app:assembleDebug` + `:app:lintDebug`（0 error）+ `:app:assembleDebugAndroidTest` **BUILD SUCCESSFUL**。
+> **踩坑**：① `DirectoryScanner` 里 `Uri.parse` 在纯 JVM 单测抛 not mocked（android.jar stub，与 P0V-01 Locator 同类）——scanner 的 importUri 改收 String、parse 挪到 `ScanDirectoryUseCase` 调用方，保持纯 JVM 可测；② Dagger 接口注入：`@Provides` 方法返回具体类 `SafDocumentEnumerator` 而注入点要接口 `DocumentEnumerator` → MissingBinding，provide 返回类型改成接口；③ `DatabaseModule` 新增 import 漏加导致 KSP 全模块报错（错误信息只说「could not be resolved」不指明缺 import，从 DI 模块入手查）。
+> **待真机回归（🚧→✅ 条件，vivo V2329A）**：① v4→v5 迁移保数据；② 授权目录（徐先生手指，SAF 系统 UI adb 驱动不了）→ 立即扫描 → 新增/已在库/未变化三分正确；③ 二次扫描秒回（全 skipped）；④ 改文件 mtime 后重扫检测到变化；⑤ 删书后重扫「复活」；⑥ 冷启动自动扫描（开关双向）；⑦ 递归子目录 + pdf 等不支持格式被跳过；⑧ 解除授权生效；⑨ 全程零 FATAL。
 
 > 实现状态（2026-08-14）：**LIB-05/06 书架 + 批量操作真机回归（vivo V2329A）全过 🚧→✅。P1 进度 3✅→5✅（IMP-07 + DATA-03 + DATA-04 + LIB-05 + LIB-06），合计 32✅ / 1🚧（仅剩 SET-02 TalkBack 手指项）。** adb 客观验证 + 徐先生手指混合。徐先生拍板的产品口径：**收藏=特殊书架「收藏」**（SYSTEM_FAVORITE 固定 id，迁移时自动插入，不可删不可改名）；**标签=书架合一**（「书架/标签/合集」本质都是「一本书属于多个分组」，只用 Collection/CollectionBook 一套表，UI 叫「书架」）；LIB-05+06 全做，仅「重新提取元数据」(LIB-06 子项)推后单独处理。
 > **数据层（Room v3→v4，红线 #6）**：① 新增 `CollectionEntity`(id/name/sortOrder/createdAt/kind) + `CollectionBookEntity`(collectionId+bookId 联合主键，**双向 FK CASCADE**：删书架清关系不删书、删书清关系) + `CollectionKind` enum(SYSTEM_FAVORITE/CUSTOM，TypeConverter 复用 books.status 范式)。② `MIGRATION_3_4` SQL 逐字取自生成的 `4.json`（保证约束名/列序一致）+ **迁移末尾 INSERT 系统书架「收藏」**(sortOrder=Long.MIN_VALUE 排最前，保证老用户升级后立即可用)。③ `CollectionDao`(observeAllWithCounts LEFT JOIN 聚合 bookCount / upsert 备份恢复用) + `CollectionBookDao`(observeBooksInCollection JOIN books+进度 / collectionIdsForBook 收藏判断)。④ `CollectionRepository`(clock/idGenerator 注入沿用 BookmarkRepository 范式 / toggleBookInCollection / toggleFavorite 系统书架快捷操作 / addBooksToCollection 批量 / ensureMutable 系统书架拒删拒改名)。

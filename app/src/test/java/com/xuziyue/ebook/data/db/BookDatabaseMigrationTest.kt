@@ -23,6 +23,8 @@ import org.robolectric.RobolectricTestRunner
  * 覆盖：
  * - v1→v2（MIGRATION_1_2，加 bookmarks/annotations）。
  * - v2→v3（MIGRATION_2_3，加 reading_sessions）。
+ * - v3→v4（MIGRATION_3_4，加 collections/collection_books + 系统书架）。
+ * - v4→v5（MIGRATION_4_5，加 import_sources）。
  *
  * 做法（Robolectric JVM，CI 友好）：
  * 1. 用裸 [SQLiteDatabase] 造一份旧版库并种数据，置对应 user_version；
@@ -66,7 +68,7 @@ class BookDatabaseMigrationTest {
 
         // 2. Room 打开（触发迁移 + schema 校验）。起点 v1 文件，当前 Room 期望 v4，故需完整迁移链 1→2→3→4。
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 
@@ -124,7 +126,7 @@ class BookDatabaseMigrationTest {
 
         // 2. Room 打开（触发迁移 + schema 校验）。起点 v2，当前期望 v4，需迁移链 2→3→4。
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 
@@ -169,9 +171,9 @@ class BookDatabaseMigrationTest {
             db.version = 3
         }
 
-        // 2. Room 打开（触发 v3→v4 迁移 + schema 校验；完整迁移链 1→2→3→4）
+        // 2. Room 打开（触发 v3→v4 迁移 + schema 校验；完整迁移链 3→4）
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 
@@ -196,6 +198,64 @@ class BookDatabaseMigrationTest {
         // 删书架连带清关系（书不删）
         db.collectionDao().deleteById("c1")
         assertTrue(db.collectionDao().snapshotAll().none { it.id == "c1" })
+
+        db.close()
+    }
+
+    @Test
+    fun `v4 升 v5 不丢数据且建出 import_sources 表且 sourceUri 唯一且 CASCADE 生效`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.cacheDir, "migration-v5-test.db").also { it.delete() }
+        dbFile = file
+
+        // 1. 造 v4 库（七表）并种数据
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            db.execSQL(V1_BOOKS_SQL)
+            db.execSQL(V1_BOOKS_CONTENTHASH_INDEX_SQL)
+            db.execSQL(V1_READING_PROGRESS_SQL)
+            db.execSQL(V2_BOOKMARKS_SQL)
+            db.execSQL(V2_BOOKMARKS_INDEX_SQL)
+            db.execSQL(V2_ANNOTATIONS_SQL)
+            db.execSQL(V2_ANNOTATIONS_INDEX_SQL)
+            db.execSQL(V3_SESSIONS_SQL)
+            db.execSQL(V3_SESSIONS_INDEX_SQL)
+            db.execSQL(V4_COLLECTIONS_SQL)
+            db.execSQL(V4_COLLECTIONS_INDEX_SQL)
+            db.execSQL(V4_COLLECTION_BOOKS_SQL)
+            db.execSQL(V4_COLLECTION_BOOKS_COLLECTIONID_INDEX_SQL)
+            db.execSQL(V4_COLLECTION_BOOKS_BOOKID_INDEX_SQL)
+            db.execSQL(
+                "INSERT INTO books(id,contentHash,title,authors,description,language,format,mediaType,filePath,fileSize,coverPath,importedAt,lastOpenedAt,status) " +
+                    "VALUES('b5','h5','目录导入测试书','[]',NULL,NULL,'EPUB','application/epub+zip','/b5.epub',0,NULL,0,NULL,'UNREAD')",
+            )
+            db.version = 4
+        }
+
+        // 2. Room 打开（触发 v4→v5 迁移 + schema 校验）
+        val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+
+        // 3. 旧数据未丢
+        assertEquals("目录导入测试书", db.bookDao().getById("b5")?.title)
+
+        // 4. 新表 import_sources 可写读
+        db.importSourceDao().upsert(
+            ImportSourceEntity("is1", "content://tree/x/document/y", "b5", 100L, 200L, 300L),
+        )
+        assertEquals("is1", db.importSourceDao().findBySourceUri("content://tree/x/document/y")?.id)
+
+        // 5. upsert 同 sourceUri 覆盖（唯一索引语义）
+        db.importSourceDao().upsert(
+            ImportSourceEntity("is1", "content://tree/x/document/y", "b5", 101L, 201L, 301L),
+        )
+        assertEquals(1, db.importSourceDao().count())
+        assertEquals(101L, db.importSourceDao().findBySourceUri("content://tree/x/document/y")?.fileSize)
+
+        // 6. FK CASCADE：删书连带清 import_sources 记录
+        db.bookDao().deleteById("b5")
+        assertTrue(db.importSourceDao().snapshotAll().isEmpty())
 
         db.close()
     }
@@ -245,5 +305,25 @@ class BookDatabaseMigrationTest {
 
         const val V3_SESSIONS_INDEX_SQL =
             "CREATE INDEX IF NOT EXISTS `index_reading_sessions_bookId` ON `reading_sessions` (`bookId`)"
+
+        // v4 schema 的 collections / collection_books（取自 app/schemas/.../4.json，v4 已冻结，逐字硬编码）。
+        const val V4_COLLECTIONS_SQL =
+            "CREATE TABLE IF NOT EXISTS `collections` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                "`sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `kind` TEXT NOT NULL, PRIMARY KEY(`id`))"
+
+        const val V4_COLLECTIONS_INDEX_SQL =
+            "CREATE INDEX IF NOT EXISTS `index_collections_name` ON `collections` (`name`)"
+
+        const val V4_COLLECTION_BOOKS_SQL =
+            "CREATE TABLE IF NOT EXISTS `collection_books` (`collectionId` TEXT NOT NULL, " +
+                "`bookId` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, PRIMARY KEY(`collectionId`, `bookId`), " +
+                "FOREIGN KEY(`collectionId`) REFERENCES `collections`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"
+
+        const val V4_COLLECTION_BOOKS_COLLECTIONID_INDEX_SQL =
+            "CREATE INDEX IF NOT EXISTS `index_collection_books_collectionId` ON `collection_books` (`collectionId`)"
+
+        const val V4_COLLECTION_BOOKS_BOOKID_INDEX_SQL =
+            "CREATE INDEX IF NOT EXISTS `index_collection_books_bookId` ON `collection_books` (`bookId`)"
     }
 }

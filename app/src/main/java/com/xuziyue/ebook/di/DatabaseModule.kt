@@ -10,6 +10,7 @@ import com.xuziyue.ebook.data.CollectionRepository
 import com.xuziyue.ebook.data.EpubSecurityValidator
 import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.ImportBookUseCase
+import com.xuziyue.ebook.data.ImportSourceRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.data.ReadingSessionRepository
 import com.xuziyue.ebook.data.export.ExportBookDataUseCase
@@ -18,10 +19,12 @@ import com.xuziyue.ebook.data.db.BookDatabase
 import com.xuziyue.ebook.data.db.MIGRATION_1_2
 import com.xuziyue.ebook.data.db.MIGRATION_2_3
 import com.xuziyue.ebook.data.db.MIGRATION_3_4
+import com.xuziyue.ebook.data.db.MIGRATION_4_5
 import com.xuziyue.ebook.data.db.AnnotationDao
 import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.CollectionBookDao
 import com.xuziyue.ebook.data.db.CollectionDao
+import com.xuziyue.ebook.data.db.ImportSourceDao
 import com.xuziyue.ebook.data.db.ReadingProgressDao
 import com.xuziyue.ebook.data.db.ReadingSessionDao
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
@@ -45,7 +48,7 @@ object DatabaseModule {
     @Singleton
     fun provideBookDatabase(@ApplicationContext context: Context): BookDatabase =
         Room.databaseBuilder(context, BookDatabase::class.java, BookDatabase.DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4) // v1→v2→v3→v4（红线 #6，不破坏性重建）
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5) // v1→…→v5（红线 #6，不破坏性重建）
             .build()
 
     @Provides
@@ -68,6 +71,28 @@ object DatabaseModule {
 
     @Provides
     fun provideCollectionBookDao(db: BookDatabase): CollectionBookDao = db.collectionBookDao()
+
+    @Provides
+    fun provideImportSourceDao(db: BookDatabase): ImportSourceDao = db.importSourceDao()
+
+    @Provides
+    @Singleton
+    fun provideImportSourceRepository(dao: ImportSourceDao): ImportSourceRepository =
+        ImportSourceRepository(dao)
+
+    @Provides
+    @Singleton
+    fun provideDocumentEnumerator(@ApplicationContext context: Context): com.xuziyue.ebook.data.scan.DocumentEnumerator =
+        com.xuziyue.ebook.data.scan.SafDocumentEnumerator(context)
+
+    @Provides
+    @Singleton
+    fun provideScanDirectoryUseCase(
+        enumerator: com.xuziyue.ebook.data.scan.DocumentEnumerator,
+        sourceRepository: ImportSourceRepository,
+        importBookUseCase: ImportBookUseCase,
+    ): com.xuziyue.ebook.data.scan.ScanDirectoryUseCase =
+        com.xuziyue.ebook.data.scan.ScanDirectoryUseCase(enumerator, sourceRepository, importBookUseCase)
 
     @Provides
     @Singleton
