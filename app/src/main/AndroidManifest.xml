@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- READ-10 TTS：Android 11+ 包可见性——系统 TTS 引擎服务（INTENT_ACTION_TTS_SERVICE）查询需要声明，
+         否则 TextToSpeech 初始化拿不到引擎（Readium tts.md 官方要求）。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".EbookApp"
         android:allowBackup="true"

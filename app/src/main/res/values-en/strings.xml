@@ -323,4 +323,24 @@
     <string name="licenses_collapse">Collapse license</string>
     <string name="licenses_transitive"> (transitive)</string>
     <string name="licenses_load_failed">Failed to load license text</string>
+    <!-- READ-10 TTS 朗读 -->
+    <string name="tts_title">Read aloud</string>
+    <string name="tts_play">Play</string>
+    <string name="tts_pause">Pause</string>
+    <string name="tts_prev_sentence">Previous sentence</string>
+    <string name="tts_next_sentence">Next sentence</string>
+    <string name="tts_speed">Speed</string>
+    <string name="tts_speed_value">%.1f×</string>
+    <string name="tts_voice">Voice</string>
+    <string name="tts_voice_auto">Auto (follow language)</string>
+    <string name="tts_timer">Sleep timer</string>
+    <string name="tts_timer_off">Off</string>
+    <string name="tts_timer_minutes">%d min</string>
+    <string name="tts_error_unsupported">This book cannot be read aloud (no text content)</string>
+    <string name="tts_error_init">TTS engine init failed. Check system TTS engine (Settings → Language &amp; input → Text-to-speech)</string>
+    <string name="tts_error_engine">TTS engine error, stopped</string>
+    <string name="tts_error_network">This voice requires network. Switch to a local voice or check connection</string>
+    <string name="tts_install_voice">Voice data missing for this language. Download it in system settings?</string>
+    <string name="tts_install_voice_ok">Download</string>
+    <string name="tts_ended">Finished reading this book</string>
 </resources>

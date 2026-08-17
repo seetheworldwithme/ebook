@@ -107,6 +107,14 @@ object ReaderModule {
         dataStore: DataStore<Preferences>,
     ): AppSettingsRepository = AppSettingsRepository(dataStore)
 
+    /** TTS 偏好仓库（READ-10 语速/发音人/定时）：复用同一个全局 DataStore。 */
+    @Provides
+    @Singleton
+    fun provideReaderTtsPreferencesRepository(
+        dataStore: DataStore<Preferences>,
+    ): com.xuziyue.ebook.data.ReaderTtsPreferencesRepository =
+        com.xuziyue.ebook.data.ReaderTtsPreferencesRepository(dataStore)
+
     @Provides
     @Singleton
     fun provideBookFileImporter(@ApplicationContext context: Context): BookFileImporter =

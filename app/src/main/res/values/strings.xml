@@ -323,4 +323,24 @@
     <string name="licenses_collapse">收起许可证</string>
     <string name="licenses_transitive">（传递依赖）</string>
     <string name="licenses_load_failed">许可证文本加载失败</string>
+    <!-- READ-10 TTS 朗读 -->
+    <string name="tts_title">朗读</string>
+    <string name="tts_play">播放</string>
+    <string name="tts_pause">暂停</string>
+    <string name="tts_prev_sentence">上一句</string>
+    <string name="tts_next_sentence">下一句</string>
+    <string name="tts_speed">语速</string>
+    <string name="tts_speed_value">%.1f×</string>
+    <string name="tts_voice">发音人</string>
+    <string name="tts_voice_auto">自动（跟随语言）</string>
+    <string name="tts_timer">定时停止</string>
+    <string name="tts_timer_off">不定时</string>
+    <string name="tts_timer_minutes">%d 分钟</string>
+    <string name="tts_error_unsupported">这本书不支持朗读（无可朗读的文本内容）</string>
+    <string name="tts_error_init">朗读引擎初始化失败，请检查系统 TTS 引擎（设置 → 语言和输入法 → 文字转语音）</string>
+    <string name="tts_error_engine">朗读引擎出错，已停止</string>
+    <string name="tts_error_network">当前发音人需要网络，请换本地发音人或检查网络</string>
+    <string name="tts_install_voice">当前语言缺少语音数据，是否前往系统设置下载？</string>
+    <string name="tts_install_voice_ok">去下载</string>
+    <string name="tts_ended">已读完本书</string>
 </resources>

@@ -47,6 +47,10 @@ readium-shared = { group = "org.readium.kotlin-toolkit", name = "readium-shared"
 readium-streamer = { group = "org.readium.kotlin-toolkit", name = "readium-streamer", version.ref = "readium" }
 readium-navigator = { group = "org.readium.kotlin-toolkit", name = "readium-navigator", version.ref = "readium" }
 readium-adapter-pdfium = { group = "org.readium.kotlin-toolkit", name = "readium-adapter-pdfium", version.ref = "readium" }
+# READ-10 TTS：独立工件（新架构 org.readium.navigator.media.tts，不在 readium-navigator 内）。
+readium-navigator-media-tts = { group = "org.readium.kotlin-toolkit", name = "readium-navigator-media-tts", version.ref = "readium" }
+# media-tts 的 POM 把 media3 声明为 runtime scope，编译期要用其类型（PlaybackParameters 等）须显式引入。
+androidx-media3-common = { group = "androidx.media3", name = "media3-common-ktx", version = "1.10.0" }
 
 # AndroidX
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }

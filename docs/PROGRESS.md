@@ -19,11 +19,11 @@
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
 | P0（MVP 必做） | 28 | 27 | 1 |
-| P1（首个增强版） | 11 | 6 | 1 |
+| P1（首个增强版） | 11 | 6 | 2 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 33 | 2 |
+| 合计 | 42 | 33 | 3 |
 
-> 当前进度：33 ✅ / 2 🚧（SET-02 TalkBack 手指项 + TYPE-05 待真机回归）。详见文末变更记录。
+> 当前进度：33 ✅ / 3 🚧（SET-02 TalkBack 手指项 + TYPE-05 + READ-10 待真机回归）。详见文末变更记录。
 
 ---
 
@@ -113,7 +113,7 @@
 | LIB-05 | ✅ | 收藏、标签、自定义书架。V1 一刀（2026-08-14）：决策口径——收藏=特殊书架「收藏」(SYSTEM_FAVORITE 固定 id)、标签=书架合一(只 Collection/CollectionBook 一套表)。Room v3→v4 加 collections+collection_books 两表(双向 FK CASCADE)+系统书架迁移时插入+CollectionRepository(clock/idGenerator 注入)+书架 Tab(第4个)+书架列表/书架内浏览+CollectionPickerSheet(多选+内联新建)+详情页 chips+收藏 toggle。**真机回归（vivo V2329A）全过**：迁移 user_version=4 + 系统书架插入 + CASCADE 删书架清关系书不删 + 书架 Tab/列表/新建/重命名/删除 + 详情页 chips + 收藏 toggle(修复图标 tint 后灰↔蓝双向清晰) |
 | LIB-06 | ✅ | 批量选择、移动到书架、删除、重新提取元数据。V1 一刀（2026-08-14）：批量选择/移动到书架/批量删除已完成——长按进入选择模式(combinedClickable 复用 IMP-07)+上下文操作栏(全选/加入书架/删除/取消)+批量加入(DAO IGNORE 幂等)+批量删除(汇总成功数)。**重新提取元数据推后单独处理**(依赖读源文件重跑 ExtractUseCase，与书架正交)。**真机回归（vivo V2329A）全过**：长按进批量模式 + 选多本 + 加入书架书架内可见 + 批量删除确认+汇总 |
 | READ-09 | ⬜ | 历史位置前进 / 后退、脚注弹层、外链确认 |
-| READ-10 | ⬜ | TTS 朗读（播放/暂停/调速/选声/定时，音频焦点抢占正确暂停） |
+| READ-10 | 🚧 | TTS 朗读（播放/暂停/调速/选声/定时，音频焦点抢占正确暂停）。V1 一刀（2026-08-17，徐先生拍板口径：**页面内播放**——前台服务+MediaSession 媒体通知留 P2）：`readium-navigator-media-tts:3.3.0`（独立工件，新架构）+ 显式 `media3-common-ktx:1.10.0`（POM 是 runtime scope）+ Manifest `TTS_SERVICE` queries（Android 11+ 引擎可见性）+ `ReaderTtsManager`（懒创建 `AndroidTtsNavigatorFactory`→`TtsNavigator`，无 ContentService/引擎失败给可理解错误）+ `TtsTimer` 定时停止（虚拟时间单测）+ `ReaderTtsPreferencesRepository`（语速/发音人/定时 DataStore 持久化）+ `TtsSheet` 面板（播放控制/语速 0.5–2.0×/发音人/定时 chips）+ 当前句 `tts` Decoration 组蓝色下划线高亮 + 自动跟翻（句级，不走 jumpHistory）+ TTS 播放中音量键放行（不与媒体音量冲突）+ 缺语音数据拉起系统下载。音频焦点由库内 TtsSessionAdapter.AudioFocusManager 处理。301 单测 + lint 全绿。**待真机回归转 ✅**：起播/暂停/续播/语速实时/换声/定时到期自停/音频焦点双向/音量键/高亮跟翻/TXT 可读/无引擎错误路径 |
 | TYPE-05 | ⬜ | 自定义字体导入、按书保存排版偏好 |
 | DATA-03 | ✅ | 全量备份 / 恢复（含数据库、设置、可选书籍文件，恢复前预览冲突）。V1 第一刀（2026-08-14）：ZIP 打包（backup.json 全表 + settings + books/ + covers/，流式写 + 临时文件原子 copy 到 SAF）+ 恢复（preview 按 contentHash 分类 NEW/UNCHANGED/进度或笔记更新 + restore 三策略 SKIP/OVERWRITE/MERGE + Zip Slip 逐 entry 防护 + contentHash 去重复用本地 + 临时文件 rename）。BackupScreen（导出 SAF CreateDocument + 导入 SAF OpenDocument → 预览对话框三策略 RadioButton）+ 设置页入口。**真机回归（vivo V2329A）全过**：备份生成 `ebook-backup-20260814.zip`（4.86MB）解压验结构（backup.json schemaVersion=1 + books/{id}.txt 10.25MB + 全表导出 + settings 5 key）+ 恢复预览对话框（徐先生手指选 SAF 文件，弹「备份含 1 本，新增 0 冲突 0」+ 三策略）+ SKIP 策略恢复不破坏现有数据（books/progress/sessions 不变）+ 全程无 FATAL |
 | DATA-04 | ✅ | 阅读时长、日 / 周趋势、连续阅读天数（仅前台实际阅读计时）。V1 第一刀（2026-08-14）：Room v2→v3 加 reading_sessions 表（id/bookId/startedAt/endedAt/activeSeconds，CASCADE）+ 差值法计时（ReaderSessionRepository start/touch/end，静止封顶 5min 阈值裁剪超时尾巴）+ 生命周期接入（onResume 续接/onPause 结束/切书结束/onCleared 兜底）+ AppSettings 统计开关（默认 true，统计页 toggleable Switch）+ StreakCalculator 连续天数纯函数 + 详情页第6区块（本书总时长/今日）+ 全局统计页（今日/本周大字 + 7天 Canvas 柱状 + 连续天数 + 清空）。**真机回归（vivo V2329A）全过**：v2→v3 迁移 user_version=3 + reading_sessions 建表不丢数据 + 打开书停留退出产生会话 activeSeconds=9s + 详情页统计区块渲染 + 统计页（今日/本周/连续阅读1天/7天柱状日期标签/开关）+ 仪器迁移测试 migrate2To3 schema 与 3.json 一致 |
@@ -167,6 +167,12 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-17）：**READ-10 TTS 朗读代码完成 ⬜→🚧（单测 301 + 编译 + lint 全绿，真机回归待做）。徐先生拍板口径：V1 页面内播放（息屏/切 app 进程活着可继续），前台服务 + MediaSession 媒体通知（稳定后台听书）推后 P2。**
+> **依赖（红线 #7）**：`org.readium.kotlin-toolkit:readium-navigator-media-tts:3.3.0`（独立工件——新架构 `org.readium.navigator.media.tts` 包，不在 readium-navigator 内，仓库调研时确认老 `TtsNavigator` 已重写到此工件；BSD-3 与主工件同项目归并披露）+ **显式** `androidx.media3:media3-common-ktx:1.10.0`（media-tts 的 POM 把 media3 声明为 runtime scope，不显式加编译期拿不到 PlaybackParameters 等类型；Apache-2.0 已在清单）。Manifest 加 `<queries>` TTS_SERVICE intent（Android 11+ 包可见性，Readium tts.md 官方要求，否则 TextToSpeech 拿不到引擎）。
+> **架构（Readium TTS 细节全封在 ReaderTtsManager，VM 只路由）**：① **ReaderTtsManager**（新文件 reader/tts/）：懒创建——首播才 `AndroidTtsNavigatorFactory(app, publication)`（无 ContentService 返回 null → 「这本书不支持朗读」）→ suspend `createNavigator(listener, initialLocator=当前页 locator, initialPreferences)`（失败 → 「引擎初始化失败，请检查系统 TTS」引导）；暴露 isPlaying/utteranceLocator/voices StateFlow；偏好 `AndroidTtsPreferences(speed, voices=mapOf(书语言 to voiceId))` submitPreferences 实时生效。② **TtsTimer** 定时停止纯类（scope 注入可测；0=不定时；暂停停表续播重启整段——分钟级粒度足够）。③ **ReaderTtsPreferencesRepository**（DataStore：tts_speed 0.5–2.0 夹取 / tts_voice_id / tts_timer_minutes）。④ **UI**：顶栏喇叭入口（canTts gating 红线 #2，PDF 恒 false）+ TtsSheet（播放/暂停/上下句 + 语速 Slider 松手写 + 发音人按钮组「自动」优先 + 定时 chips 不定时/5/15/30）+ 事件 Toast（错误/缺语音数据拉 `AndroidTtsEngine.requestInstallVoice` 系统下载页/读完）。⑤ **集成**：当前句 `tts` Decoration 组（蓝色下划线 `Underline(tint)`，与用户高亮 `highlights` 组并存互不干扰）；自动跟翻 collect utteranceLocator → `navigator.go(locator, false)`（**不走 navCommands/jumpHistory**——跟翻是渲染跟随非用户跳转；句级而非 token 级防抖动）；TTS 播放中 `handleVolumeKey` 直接放行（READ-03 验收「不与 TTS 音量控制冲突」，用户此时调媒体音量）；切书 closeTts（Publication 是文本源不能跨书）+ onCleared 兜底。
+> **音频焦点（READ-10 验收核心）**：库内 `TtsSessionAdapter.AudioFocusManager`（AUDIOFOCUS_GAIN / LOSS / LOSS_TRANSIENT / NOISY 全处理）自动暂停，本层不重复实现——真机回归专项验双向抢占。**DATA-04 边界**：TTS 不计入阅读时长统计（onPause 结束会话的现状维持，收听场景是否计时留产品决策，注记说明）。
+> **测试**：TtsTimerTest 4（虚拟时间 advanceTimeBy 精确到 ms 边界）+ ReaderTtsPreferencesRepositoryTest 4（Robolectric 真实 DataStore：默认值/speed 夹取/voiceId null 删除/定时持久化）；StringResourceKeysTest 双语 key 对齐自动覆盖新增 19 组 TTS 文案。合计 `:app:testDebugUnitTest` **301 passed** + lintDebug 全绿。**仅单测+编译+lint，未真机回归——READ-10 维持 🚧**。真机清单（vivo）：起播/暂停/续播、语速实时、换发音人、定时 5min 到期自停、**音频焦点双向**（TTS↔音乐互抢正确暂停/恢复）、播放中音量键调媒体音量不翻页、当前句蓝色下划线跟随 + 跨页自动翻、TXT 书可读、无系统引擎时错误引导、全程零 FATAL。
 
 > 实现状态（2026-08-17）：**TYPE-05 自定义字体 + 按书排版代码完成 ⬜→🚧（单测 293 + 编译 + lint 全绿，真机回归待做）。徐先生拍板口径：V1 预置开源中文字体，SAF 运行时导入推后（Readium 3.3 的字体机制只支持 APK assets——`WebViewServer` 只把 `https://readium/assets/` 映射到 APK assets，运行时导入的字体文件没有 URL 通道；替代路是 JS 逐章 base64 注入（中文大字体每章首屏闪退回）或加 INTERNET 起本地 server（违反 SET-04 零网络红线），均不可取）。**
 > **① 预置字体**：霞鹜文楷屏幕阅读版 v1.522（LXGW/LxgwWenKai-Screen，SIL OFL-1.1 允许再分发，24.5MB）打包 `assets/fonts/LXGWWenKaiScreen-Regular.ttf`；`EpubNavigatorFragment.Configuration` 加 `servedAssets += "fonts/.*"`（WebViewServer 白名单，最小开放面）+ `addFontFamilyDeclaration(FontFamily("LXGW WenKai Screen"))`（家族名必须与 TTF name 表一致，常量化在 `ReaderTypography.LXGW_FONT_FAMILY` 防 UI/声明两侧漂移）；排版面板字体组加「霞鹜文楷」选项。EPUB/TXT（转 EPUB）统一生效，ReadiumCss 注入 @font-face + preload link。「无效字体不导致书打不开」验收：字体编译期内置无用户输入面；fontFamily 是普通 CSS 字符串，坏值只触发浏览器字体回退不崩。LicenseData 补 `OFL_1_1` 枚举 + `legal/ofl-1.1.txt` 全文（取自上游仓库 OFL.txt，含霞鹜保留名条款）+ LicenseDataAuditTest 补 MUST_DISCLOSE。APK 增量 ≈ +24.5MB。

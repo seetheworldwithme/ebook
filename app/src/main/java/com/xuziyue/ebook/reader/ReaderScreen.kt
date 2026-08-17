@@ -52,10 +52,13 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -114,6 +117,7 @@ import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
 import com.xuziyue.ebook.model.ReaderTheme
 import com.xuziyue.ebook.model.ReaderTypography
+import com.xuziyue.ebook.reader.tts.ReaderTtsManager
 import com.xuziyue.ebook.ui.relativeTime
 import com.xuziyue.ebook.ui.resolve
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -157,6 +161,11 @@ fun ReaderScreen(
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val annotations by viewModel.annotations.collectAsStateWithLifecycle()
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
+    val ttsPlaying by viewModel.ttsPlaying.collectAsStateWithLifecycle()
+    val ttsPreferences by viewModel.ttsPreferences.collectAsStateWithLifecycle()
+    val ttsVoices by viewModel.ttsVoices.collectAsStateWithLifecycle()
+    val ttsTimerMinutes by viewModel.ttsTimerMinutes.collectAsStateWithLifecycle()
+    val ttsEvent by viewModel.ttsEvents.collectAsStateWithLifecycle()
 
     // 跟随系统主题：系统暗色变化时推入 VM，解析 ReaderTheme.SYSTEM → DARK/LIGHT。
     val systemDark = isSystemInDarkTheme()
@@ -247,6 +256,7 @@ fun ReaderScreen(
     var editingAnnotation by remember { mutableStateOf<AnnotationItem?>(null) }
     var showExportFormat by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showTts by remember { mutableStateOf(false) }
     // READ-02：顶/底控制栏显隐——默认显示一次（用户进入即见，便于看标题/进度）。
     // 切换由 Readium InputListener.onTap（WebView 层，见 ReaderFragment）经 VM 桥接回这里翻转；
     // 滚动模式栏常驻（controlsVisible 恒 true）。rememberSaveable 跨横竖屏/暗色保位，导航重进重置默认。
@@ -311,9 +321,11 @@ fun ReaderScreen(
                 isBookmarked = isBookmarked,
                 canBookmark = capabilities.canBookmark,
                 canSearch = capabilities.canSearch,
+                canTts = capabilities.canTts,
                 onBack = onBack,
                 onOpenToc = { showToc = true },
                 onOpenSearch = { showSearch = true },
+                onOpenTts = { showTts = true },
                 onGoBack = { viewModel.goBack() },
                 onToggleBookmark = { viewModel.toggleBookmark() },
                 onOpenProgress = { showProgress = true },
@@ -395,6 +407,47 @@ fun ReaderScreen(
                 onJump = { viewModel.jumpToLocator(it); showSearch = false },
                 onDismiss = { showSearch = false },
             )
+        }
+
+        // TTS 朗读面板（READ-10：canTts gating；播放/暂停/上下句/语速/发音人/定时/错误提示）
+        if (showTts) {
+            TtsSheet(
+                isPlaying = ttsPlaying,
+                preferences = ttsPreferences,
+                voices = ttsVoices,
+                timerMinutes = ttsTimerMinutes,
+                onPlay = { viewModel.startTts() },
+                onPause = { viewModel.pauseTts() },
+                onPrev = { viewModel.skipPreviousTts() },
+                onNext = { viewModel.skipNextTts() },
+                onSpeed = { viewModel.setTtsSpeed(it) },
+                onVoice = { viewModel.setTtsVoice(it) },
+                onTimer = { viewModel.setTtsTimer(it) },
+                onDismiss = { showTts = false },
+            )
+        }
+
+        // READ-10：TTS 一次性事件（错误 Toast / 缺语音数据引导下载 / 读完提示）
+        val ttsEndedText = stringResource(R.string.tts_ended)
+        val ttsInstallText = stringResource(R.string.tts_install_voice)
+        val ttsInstallOk = stringResource(R.string.tts_install_voice_ok)
+        LaunchedEffect(ttsEvent) {
+            when (val ev = ttsEvent) {
+                is ReaderTtsManager.Event.Error -> {
+                    Toast.makeText(context, ev.message.resolve(context), Toast.LENGTH_LONG).show()
+                    viewModel.consumeTtsEvent()
+                }
+                ReaderTtsManager.Event.MissingVoiceData -> {
+                    Toast.makeText(context, ttsInstallText, Toast.LENGTH_LONG).show()
+                    viewModel.requestTtsInstallVoice()
+                    viewModel.consumeTtsEvent()
+                }
+                ReaderTtsManager.Event.Ended -> {
+                    Toast.makeText(context, ttsEndedText, Toast.LENGTH_SHORT).show()
+                    viewModel.consumeTtsEvent()
+                }
+                null -> Unit
+            }
         }
 
         // 书签面板（READ-06：列表 + 跳回 + 删除）
@@ -494,9 +547,11 @@ private fun ReaderTopBar(
     isBookmarked: Boolean,
     canBookmark: Boolean,
     canSearch: Boolean,
+    canTts: Boolean,
     onBack: () -> Unit,
     onOpenToc: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenTts: () -> Unit,
     onGoBack: () -> Unit,
     onToggleBookmark: () -> Unit,
     onOpenProgress: () -> Unit,
@@ -524,6 +579,12 @@ private fun ReaderTopBar(
                 if (canSearch) {
                     IconButton(onClick = onOpenSearch) {
                         Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.reader_search))
+                    }
+                }
+                // READ-10：TTS 朗读入口（canTts gating，红线 #2；PDF 恒 false 隐藏）。
+                if (canTts) {
+                    IconButton(onClick = onOpenTts) {
+                        Icon(Icons.Filled.VolumeUp, contentDescription = stringResource(R.string.tts_title))
                     }
                 }
                 // READ-02：目录/进度跳转后可返回上一阅读位置（无历史时隐藏）。
@@ -778,8 +839,7 @@ private fun ResultsBody(
     state: SearchUiState.Results,
     onLoadMore: () -> Unit,
     onJump: (Locator) -> Unit,
-) {
-    val countText = when {
+) {    val countText = when {
         state.resultCount != null -> stringResource(R.string.reader_search_results_found, state.resultCount)
         state.exhausted -> stringResource(R.string.reader_search_results_total, state.items.size)
         else -> stringResource(R.string.reader_search_results_loaded, state.items.size)
@@ -824,6 +884,166 @@ private fun ResultsBody(
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * TTS 朗读面板（READ-10）。
+ *
+ * 控制行：上一句 / 播放-暂停 / 下一句；语速 Slider（0.5–2.0×，松手写）；
+ * 发音人列表（会话未建时提示先播放；按书语言过滤近似——展示引擎全部声音由系统语言排序）；
+ * 定时 chips（不定时/5/15/30 分钟，到期自动暂停）。
+ * 偏好全部持久化（ReaderTtsPreferencesRepository），跨会话保位。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtsSheet(
+    isPlaying: Boolean,
+    preferences: com.xuziyue.ebook.data.ReaderTtsPreferencesRepository.TtsPrefs?,
+    voices: List<org.readium.navigator.media.tts.android.AndroidTtsEngine.Voice>,
+    timerMinutes: Int,
+    onPlay: () -> Unit,
+    onPause: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSpeed: (Double) -> Unit,
+    onVoice: (String?) -> Unit,
+    onTimer: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp),
+        ) {
+            Text(
+                stringResource(R.string.tts_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .semantics { heading() },
+            )
+
+            // 播放控制行
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onPrev) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.tts_prev_sentence))
+                }
+                IconButton(onClick = if (isPlaying) onPause else onPlay) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = stringResource(if (isPlaying) R.string.tts_pause else R.string.tts_play),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.tts_next_sentence))
+                }
+            }
+
+            // 语速（0.5–2.0×；本地跟手，松手写一次）
+            val speedLabel = stringResource(R.string.tts_speed)
+            var localSpeed by remember(preferences?.speed) { mutableStateOf((preferences?.speed ?: 1.0).toFloat()) }
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(speedLabel, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.tts_speed_value, localSpeed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Slider(
+                    value = localSpeed,
+                    onValueChange = { localSpeed = it },
+                    onValueChangeFinished = { onSpeed(localSpeed.toDouble()) },
+                    valueRange = 0.5f..2.0f,
+                    modifier = Modifier.semantics { contentDescription = "$speedLabel $localSpeed" },
+                )
+            }
+
+            // 发音人（会话未建 voices 空 → 提示点播放后选择；否则列声音按钮组）
+            Text(
+                stringResource(R.string.tts_voice),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            if (voices.isEmpty()) {
+                Text(
+                    stringResource(R.string.tts_voice_auto),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // 「自动」选项 + 引擎全部声音（名字含语言标识）
+                    val autoSelected = preferences?.voiceId == null
+                    val autoModifier = Modifier.semantics { role = Role.RadioButton; selected = autoSelected }
+                    if (autoSelected) {
+                        Button(onClick = { onVoice(null) }, modifier = autoModifier) {
+                            Text(stringResource(R.string.tts_voice_auto))
+                        }
+                    } else {
+                        OutlinedButton(onClick = { onVoice(null) }, modifier = autoModifier) {
+                            Text(stringResource(R.string.tts_voice_auto))
+                        }
+                    }
+                    voices.take(8).forEach { voice ->
+                        val isSelected = preferences?.voiceId == voice.id.toString()
+                        val vModifier = Modifier.semantics { role = Role.RadioButton; selected = isSelected }
+                        val label = voice.id.toString().substringAfter(':').ifBlank { voice.language.toString() }
+                        if (isSelected) {
+                            Button(onClick = { onVoice(voice.id.toString()) }, modifier = vModifier) { Text(label, maxLines = 1) }
+                        } else {
+                            OutlinedButton(onClick = { onVoice(voice.id.toString()) }, modifier = vModifier) { Text(label, maxLines = 1) }
+                        }
+                    }
+                }
+            }
+
+            // 定时停止 chips
+            Text(
+                stringResource(R.string.tts_timer),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                com.xuziyue.ebook.reader.tts.TtsTimer.MINUTES_OPTIONS.forEach { minutes ->
+                    val isSelected = minutes == timerMinutes
+                    val label = if (minutes == 0) {
+                        stringResource(R.string.tts_timer_off)
+                    } else {
+                        stringResource(R.string.tts_timer_minutes, minutes)
+                    }
+                    val tModifier = Modifier.semantics { role = Role.RadioButton; selected = isSelected }
+                    if (isSelected) {
+                        Button(onClick = { onTimer(minutes) }, modifier = tModifier) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { onTimer(minutes) }, modifier = tModifier) { Text(label) }
                     }
                 }
             }

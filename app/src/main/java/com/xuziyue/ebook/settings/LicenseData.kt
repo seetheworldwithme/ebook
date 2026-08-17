@@ -61,6 +61,7 @@ object LicenseData {
         Entry("koi (mcxiaoke)", "0.5.5", License.APACHE_2_0, "https://github.com/mcxiaoke/koi", transitive = true),
         Entry("Okio", "3.17.0", License.APACHE_2_0, "https://github.com/square/okio", transitive = true),
         Entry("PdfiumAndroid (marain87)", "1.9.8", License.APACHE_2_0, "https://github.com/marain87/PdfiumAndroid", transitive = true),
+        // READ-10：readium-navigator-media-tts 是 Readium 同项目独立工件（BSD-3 同主工件），归并披露。
         Entry("Readium Kotlin Toolkit", "3.3.0", License.BSD_3_CLAUSE, "https://github.com/readium/mobile"),
         Entry("Timber", "5.0.1", License.APACHE_2_0, "https://github.com/JakeWharton/timber"),
     )

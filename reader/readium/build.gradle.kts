@@ -21,6 +21,9 @@ dependencies {
     implementation(project(":core:model"))
     // 用 api 让 :app 传递访问 Readium；P0V-02 在此封装打开流程与（未来）Compose↔Fragment 桥接。
     api(libs.bundles.readium)
+    // READ-10 TTS：TtsNavigatorFactory / AndroidTtsEngine / AndroidTtsPreferences（api 供 :app 引用类型）。
+    api(libs.readium.navigator.media.tts)
+    implementation(libs.androidx.media3.common)
     api(libs.androidx.webkit)
     implementation(libs.kotlinx.coroutines.android)
 

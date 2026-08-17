@@ -25,8 +25,10 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.xuziyue.ebook.R
 import com.xuziyue.ebook.model.ReaderTypography
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
@@ -60,6 +62,9 @@ class ReaderFragment : Fragment() {
 
     // READ-03：音量键翻页开关（collect viewModel.volumeKeyPaging 后更新，默认开）。interceptor 读它决定是否消费。
     private var volumeKeyPaging = true
+
+    // READ-10：TTS 播放中放行音量键（恢复系统媒体音量调节，验收「不与 TTS 音量控制冲突」）。
+    private var ttsPlaying = false
 
     // READ-02：控制栏显隐切换——onTap 在 WebView 层触发（只对中央 60%：左右各 20% 被 Compose 翻页 overlay
     // 吃掉，到不了 WebView）。请求 VM 翻转 barsVisible。长按选词是 WebView 另一条路（onSelectionStart），
@@ -194,6 +199,36 @@ class ReaderFragment : Fragment() {
                 launch { viewModel.decorations.collect { nav.applyDecorations(it, DECORATION_GROUP) } }
                 // READ-03：音量键翻页开关 → 更新本地拦截标志（interceptor 读它决定消费 / 放行）。
                 launch { viewModel.volumeKeyPaging.collect { volumeKeyPaging = it } }
+                // READ-10：TTS 播放态 → 音量键放行标志。
+                launch { viewModel.ttsPlaying.collect { ttsPlaying = it } }
+                // READ-10：当前朗读句 → tts Decoration 组（蓝色，与用户高亮区分；组独立互不干扰）。
+                launch {
+                    viewModel.ttsUtterance.collect { locator ->
+                        val target = navigator ?: return@collect
+                        if (locator == null) {
+                            target.applyDecorations(emptyList(), DECORATION_GROUP_TTS)
+                        } else {
+                            target.applyDecorations(
+                                listOf(
+                                    Decoration(
+                                        id = "tts-utterance",
+                                        locator = locator,
+                                        style = Decoration.Style.Underline(tint = 0xFF2196F3.toInt()),
+                                    ),
+                                ),
+                                DECORATION_GROUP_TTS,
+                            )
+                        }
+                    }
+                }
+                // READ-10：自动跟翻——朗读句离开当前可视页时 go 到该句（animated=false 不闪）。
+                // 不走 navCommands / jumpHistory：跟翻是渲染跟随，不是用户跳转，不污染返回历史。
+                // 句级粒度（utteranceLocator）而非 token 级：token 每词更新会抖动，句级足够顺。
+                launch {
+                    viewModel.ttsUtterance.collect { locator ->
+                        if (locator != null) navigator?.go(locator, animated = false)
+                    }
+                }
                 // navCommands → 执行目录 / 进度 / 返回跳转（READ-02）
                 launch {
                     viewModel.navCommands.collect { cmd ->
@@ -312,9 +347,11 @@ class ReaderFragment : Fragment() {
      *
      * 上键 = 上一页（goBackward），下键 = 下一页（goForward）。
      * 同时消费 DOWN + UP：阻止系统在 ACTION_DOWN 调音量（否则会先闪音量条再翻页），仅 ACTION_UP 翻页。
-     * MVP 无 TTS，不存在 TTS 音量冲突（design.md READ-03「不会与 TTS 音量控制冲突」）。
+     * READ-10：TTS 播放中放行（用户此时调的是媒体音量，翻页拦截反而挡住音量条——验收
+     * 「不与 TTS 音量控制冲突」）。
      */
     private fun handleVolumeKey(event: KeyEvent): Boolean {
+        if (ttsPlaying) return false
         if (!volumeKeyPaging) return false
         if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP &&
             event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return false
@@ -379,6 +416,7 @@ class ReaderFragment : Fragment() {
         const val ARG_BOOK_ID = "book_id"
         private const val NAV_TAG = "epub_navigator"
         private const val DECORATION_GROUP = "highlights"
+        private const val DECORATION_GROUP_TTS = "tts"
         private const val MENU_HIGHLIGHT_ID = 1
         private const val MENU_COPY_ID = 2
         private const val MENU_SHARE_ID = 3

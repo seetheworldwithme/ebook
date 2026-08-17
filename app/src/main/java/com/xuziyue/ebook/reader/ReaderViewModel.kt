@@ -12,6 +12,7 @@ import com.xuziyue.ebook.data.BookmarkRepository
 import com.xuziyue.ebook.data.BookTypographyOverrides
 import com.xuziyue.ebook.data.BookTypographyRepository
 import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
+import com.xuziyue.ebook.data.ReaderTtsPreferencesRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.data.ReadingSessionRepository
@@ -30,6 +31,7 @@ import com.xuziyue.ebook.ui.UserMessage
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
 import com.xuziyue.ebook.reader.readium.toEpubPreferences
 import com.xuziyue.ebook.reader.readium.toReaderCapabilities
+import com.xuziyue.ebook.reader.tts.ReaderTtsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
@@ -54,6 +56,7 @@ import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.navigator.media.tts.android.AndroidTtsEngine
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
@@ -95,6 +98,7 @@ class ReaderViewModel @Inject constructor(
     private val annotationRepository: AnnotationRepository,
     private val sessionRepository: ReadingSessionRepository,
     private val exportUseCase: ExportBookDataUseCase,
+    private val ttsPreferencesRepository: ReaderTtsPreferencesRepository,
 ) : ViewModel(), EpubNavigatorFragment.Listener {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -270,6 +274,8 @@ class ReaderViewModel @Inject constructor(
         }
         // DATA-04：切书前结束旧会话计时并落盘。
         endSessionIfActive()
+        // READ-10：切书关旧 TTS 会话（Publication 是会话的文本源，不能跨书复用）。
+        closeTts()
 
         openJob?.cancel()
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
@@ -751,6 +757,103 @@ class ReaderViewModel @Inject constructor(
         _searchState.value = SearchUiState.Idle
     }
 
+    // ===== TTS 朗读（READ-10：ReaderTtsManager 封装 Readium TTS 细节，VM 只做路由与集成）=====
+
+    private var ttsManager: ReaderTtsManager? = null
+
+    /** TTS 播放态（UI 面板 + Fragment 音量键放行共用）。 */
+    val ttsPlaying: StateFlow<Boolean> get() = _ttsPlaying
+    private val _ttsPlaying = MutableStateFlow(false)
+
+    /** 当前朗读句 Locator（null = 未播）。 */
+    val ttsUtterance: StateFlow<Locator?> get() = _ttsUtterance
+    private val _ttsUtterance = MutableStateFlow<Locator?>(null)
+
+    /** TTS 一次性事件（Toast / 拉起语音下载）。 */
+    val ttsEvents: StateFlow<ReaderTtsManager.Event?> get() = _ttsEvents
+    private val _ttsEvents = MutableStateFlow<ReaderTtsManager.Event?>(null)
+
+    private fun ensureTtsManager(): ReaderTtsManager? {
+        val state = _uiState.value as? ReaderUiState.Ready ?: return null
+        ttsManager?.let { return it }
+        val manager = ReaderTtsManager(
+            context = context,
+            scope = viewModelScope,
+            publication = state.publication,
+            preferencesRepository = ttsPreferencesRepository,
+        )
+        ttsManager = manager
+        viewModelScope.launch {
+            manager.isPlaying.collect { _ttsPlaying.value = it }
+        }
+        viewModelScope.launch {
+            manager.utteranceLocator.collect { _ttsUtterance.value = it }
+        }
+        viewModelScope.launch {
+            manager.events.collect { event -> if (event != null) _ttsEvents.value = event }
+        }
+        return manager
+    }
+
+    /** 开始朗读（从当前页首可见元素起）。READ-10 入口按 [ReaderCapabilities.canTts] gating（红线 #2）。 */
+    fun startTts() {
+        val manager = ensureTtsManager() ?: return
+        manager.start(latestLocator)
+    }
+
+    fun pauseTts() {
+        ttsManager?.pause()
+    }
+
+    fun skipPreviousTts() {
+        ttsManager?.previousUtterance()
+    }
+
+    fun skipNextTts() {
+        ttsManager?.nextUtterance()
+    }
+
+    fun setTtsSpeed(speed: Double) {
+        ttsManager?.setSpeed(speed)
+    }
+
+    fun setTtsVoice(voiceId: String?) {
+        ttsManager?.setVoice(voiceId)
+    }
+
+    fun setTtsTimer(minutes: Int) {
+        ttsManager?.setTimer(minutes)
+    }
+
+    fun requestTtsInstallVoice() {
+        ttsManager?.requestInstallVoice()
+    }
+
+    /** 消费一次性事件（UI collect 后调，防重复 Toast）。 */
+    fun consumeTtsEvent() {
+        _ttsEvents.value = null
+    }
+
+    /** TTS 偏好（语速/发音人/定时；面板初始化用）。 */
+    val ttsPreferences: StateFlow<ReaderTtsPreferencesRepository.TtsPrefs?> = ttsPreferencesRepository.observe()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** 可选发音人列表（TTS 会话就绪后非空）。 */
+    val ttsVoices: StateFlow<List<AndroidTtsEngine.Voice>> = ttsManager?.voices
+        ?: MutableStateFlow(emptyList())
+
+    /** TTS 定时当前值（分钟）。 */
+    val ttsTimerMinutes: StateFlow<Int> = ttsManager?.timerMinutes
+        ?: MutableStateFlow(0)
+
+    /** 关闭 TTS 会话（切书 / onCleared；进程内页面播放口径，退出阅读页即停）。 */
+    private fun closeTts() {
+        ttsManager?.close()
+        ttsManager = null
+        _ttsPlaying.value = false
+        _ttsUtterance.value = null
+    }
+
     // ===== EpubNavigatorFragment.Listener =====
 
     override fun onExternalLinkActivated(url: AbsoluteUrl) {
@@ -766,6 +869,7 @@ class ReaderViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         clearSearch() // 释放搜索 iterator（Closeable）
+        closeTts() // READ-10：释放 TTS 会话（TtsPlayer + MediaSession 适配器）
         endSessionIfActive() // DATA-04：VM 销毁时兜底结束会话（强杀时主要靠 onPause）
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
     }
