@@ -23,7 +23,7 @@
 | P2（长期候选） | 3 | 0 | 0 |
 | 合计 | 42 | 33 | 4 |
 
-> 当前进度：33 ✅ / 4 🚧（SET-02 TalkBack 手指项 + TYPE-05 + READ-10 + READ-09 待真机回归）。详见文末变更记录。
+> 当前进度：33 ✅ / 4 🚧（SET-02 TalkBack 手指项 + TYPE-05 + READ-10 + READ-09 待真机回归）+ P0V-03 PDF/CBZ 代码完成待真机。详见文末变更记录。
 
 ---
 
@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | P0V-01 | ✅ | Readium 打开代表性 EPUB 全过。真机（vivo PD2329）SAF 自传：Alice(EPUB2,内置) + alice-epub3(EPUB3 英文) + 山海經(EPUB2 中文,正文古文不乱码) + cole(FXL 固定版式) 均打开/翻页/渲染；cole ERR_FAILED 定性为内存压力偶发（清内存后正常）。详见变更记录 |
 | P0V-02 | ✅ | Compose 桥接+Locator 恢复+排版偏好+Decoration。真机（vivo PD2329）全过：Locator 恢复三场景（旋转/后台被杀/强杀，19%→19%）；主题日/黄/夜+字号实时生效；Decoration 高亮——长按选中→系统菜单「高亮」→selection.locator→黄色渲染，翻页往返+旋转后保留 |
-| P0V-03 | ⏸ V1 | PDF 验证整体推后到 V1（MVP 不含 PDF）。已知关键点：文字批注/选择不支持(issue #823)、off-by-one 进度 bug(#811)、16KB 对齐、实际依赖 marain87:1.9.8。详见 implementation-plan §3/§4 |
+| P0V-03 | 🚧 | PDF 验证（V1 兑现中）：pdfium 三件套接线（PdfiumDocumentFactory + PdfNavigatorFragment）+ 能力矩阵 PDF 分支实测驱动 UI gating；代码 + 单测全绿（2026-08-17），**待真机回归**（打开/翻页/单页连续/缩放/恢复/书签/目录 outline/off-by-one 观察）。详见变更记录 |
 | P0V-04 | ✅ | TXT→Readium 接线：TXT 生成标准 EPUB 复用 EPUB 链路。真机（vivo PD2329）《万相之王》能打开/翻页/中文不乱码/夜间主题/横屏旋转恢复；42 单测过 |
 | P0V-05 | ✅ | 输出能力矩阵实测结果；未通过能力从 MVP UI 中隐藏。新增 `ReaderCapabilities`（`:core:model`）+ `Publication.toReaderCapabilities()`（`:reader:readium`，`conformsTo`+`isSearchable`）；UI gating 钩子落高亮入口；能力来自 Publication 非扩展名（红线 #2）；5 单测过。详见变更记录 |
 
@@ -167,6 +167,17 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-17）：**V1 PDF 基础浏览 + CBZ 代码完成（P0V-03 ⏸→🚧；PDF/CBZ 打开/导入/能力 gating 全链路打通）。单测 387 + assembleDebug + lintDebug 全绿，真机回归待做。** 计划文档 `docs/plans/2026-08-17-pdf-cbz-implementation-plan.md`；API 事实全部经 javap 反编译 Readium 3.3.0 jar 坐实（非文档推断）。
+> **关键调研结论**：① **CBZ 解析今天就已启用**——`DefaultPublicationParser` 内部固定挂 `ImageParser`（CBZ→图片序列 Publication，conformsTo(DIVINA)=true），零额外配置；② PDF 解析只差一个开关——`ReadiumFacade.pdfFactory=null → PdfiumDocumentFactory(context)`；③ **pdfium 三件套依赖 + JitPack 仓库 + 许可证两条目（AndroidPdfViewer 3.2.8 / PdfiumAndroid 1.9.8）REL-07 时早已全部就位**，零新增许可证面；④ CBZ 渲染用 `ImageNavigatorFragment`（无 Configurable/无缩放偏好/无目录，能力弱于 PDF 属已知边界）。
+> **① 能力矩阵（:core:model，红线 #2）**：`ReaderFormat` + CBZ；`ReaderCapabilities` 加两字段——`canAdjustTypography`（排版控件，EPUB=true / PDF/CBZ=false 固定版式）+ `canSwitchPagingMode`（翻页方式，EPUB/PDF=true（PDF 经 scrollAxis）/ CBZ=false）；CBZ 分支 canToc/canSearch/canHighlight 全 false（浏览/书签/恢复可用）。`PublicationCapabilities.kt` 抽 `toReaderFormat()`（EPUB/PDF/DIVINA→CBZ，兜底 EPUB）。
+> **② 阅读器三 Navigator 分流（最大改动面）**：新 `NavigatorSpec` sealed（Epub 带 factory+prefs / Pdf 带 engineProvider+PdfiumPreferences / Cbz 只有 publication+locator）收敛 `ReaderUiState.Ready` 的差异化创建参数（原 EpubNavigatorFactory+EpubPreferences 两字段插不进 PDF/CBZ）；VM 追加实现 `PdfNavigatorFragment.Listener` / `ImageNavigatorFragment.Listener`（全 default 方法零 override）+ `pdfPreferences` flow（typography.scroll→scrollAxis 映射，与 EPUB 共用「翻页方式」开关零新 UI）；`ReaderFragment.navigator` 类型 `EpubNavigatorFragment → Navigator` 公共接口——bindNavigatorObservers 公共块（currentLocator/navCommands/音量键）走基接口，EPUB 专属块（submitPreferences/decorations/TTS 跟翻）与 PDF 块（submit pdfPreferences）各自 `as?` 分支；**进程重建 dummy factory 升级为三格式复合工厂**（按恢复 child class 名分发 Pdf/Image/Epub dummy，防格式不匹配恢复崩溃）。
+> **③ 导入链路**：ZIP 安全校验适用面 `ext==epub` → `ext in {epub,cbz}`（**PDF 非 ZIP 绝不能过 ZipFile 校验**）；mediaType 派生抽纯函数 `mediaTypeForExtension`（pdf→application/pdf / cbz→application/vnd.comic+zip）；SAF launcher mimes + Manifest intent-filter 追加 pdf + comic zip 两族；`ScanConfig.supportedExtensions` +pdf/cbz（IMP-06 真机注记里「pdf 被扫描跳过」的行为自此反转）。
+> **④ UI gating**：底栏字号± 与排版面板排版区（按书开关/字号/字重/行高/段距/页边距/对齐/字体/主题）按 `canAdjustTypography` 显隐；翻页方式按 `canSwitchPagingMode` 显隐；显示区（亮度/常亮/方向）+ 音量键开关恒显（Window/app 层与格式无关）。
+> **⑤ 样本与测试**：`scripts/gen_format_fixtures.py`（纯 stdlib）生成 `samples/public/formats/minimal.pdf`（手写 3 页文本型 PDF，xref/页树/文本对象）+ `sample.cbz`（4 页彩色 PNG DEFLATE ZIP）；JVM 结构测试 `FormatSamplesTest` 2 项。新增/改动单测：ReaderCapabilitiesTest +CBZ 与两新字段、PdfPreferencesMappingsTest 3（scroll→scrollAxis 双向+默认）、ImportMediaTypeTest 4（mediaType 四格式/大小写兜底/扫描白名单/合法 CBZ 过校验器）。
+> **依赖踩坑（已记入 libs.versions.toml 注释）**：① `readium-adapter-pdfium` aggregator 是**空壳**（只有 BuildConfig），`PdfiumEngineProvider/PdfiumPreferences` 实际在 `readium-adapter-pdfium-navigator` 子工件——bundle 已含但需显式引用；② **`PdfiumEngineProvider` 不是泛型类**（实现 `PdfEngineProvider<S,P,E>` 时已固化类型参数）——写成 `PdfiumEngineProvider<PdfiumSettings,...>` 是非法泛型，Kotlin 前端报 ERROR type，**KSP/Hilt 只把前端错误转述成误导性的「could not be resolved」**（排查 1h+，教训：KSP 类型解析失败先查 Kotlin 前端类型错误）；③ `PdfNavigatorFragment.createFactory` 参数名是 `preferences`/`pdfEngineProvider`（非 initialPreferences/engineProvider，javap MethodParameters 坐实）；④ `goForward/goBackward` 在 `OverflowableNavigator` 接口不在 `Navigator` 基接口，star projection 上不能调 `submitPreferences(P)` 需 as 回具体类型。
+> **测试证据**：`:core:model` **21** / `:reader:readium` **51** / `:app` **315** = **387 单测全绿**（0 fail/0 error/0 skip）+ `:app:assembleDebug` BUILD SUCCESSFUL（APK 63.7MB，pdfium native so 打入）+ `:app:lintDebug` **0 errors**。
+> **待真机回归（🚧→✅ 条件，vivo V2329A）**：① PDF：SAF 导入（元数据/封面/书库 mediaType）→ 打开翻页 → 排版面板切滚动/分页生效（scrollAxis）→ pinch 缩放 → 进度% + 强杀恢复 → 书签 → 目录（PDF outline）→ **搜索/高亮/TTS/字号±/排版区不出现**（能力 gating 验证）；② CBZ：导入 → 打开翻页（4 色顺序）→ 进度/书签/恢复 → 面板只剩显示区；③ PDF off-by-one（issue #811）观察；④ 目录扫描 pdf/cbz 被导入（此前跳过行为反转）；⑤ 回归 EPUB/TXT 全链路无影响；⑥ 全程零 FATAL。
 
 > 实现状态（2026-08-17）：**READ-09 历史前进/后退 + 脚注弹层 + 外链确认代码完成 ⬜→🚧（单测 311 + 编译 + lint 全绿，真机回归待做）。** 徐先生拍板先做 READ-09（不动真机、纯代码+单测可闭环；READ-02 已有 jumpHistory 单向栈地基）。
 > **Readium 侧源码级调研（jar 反编译坐实，非文档推断）**：① **脚注链路**——`R2BasicWebView.onTap` 用 jsoup 检测 `a[epub:type=noteref]` → 取 href fragment → runBlocking 读目标资源 `aside#id` 的 innerHTML → **内容经 `Jsoup.clean(Safelist.relaxed())` 清洗**（脚本/事件处理器已剥，红线 #4 的 XSS 面由库兜住）→ 包成 `FootnoteContext(noteContent)` → 经 `EpubNavigatorViewModel.navigateToUrl` 调 `listener.shouldFollowInternalLink(link, context)` 询问 app——返回 true 页内跳转，返回 false 拦截交 app 自行展示（我们选后者弹弹层）。**EPUB2 无 epub:type 的旧式脚注不走这条**，走普通内链（`LinkContext` 无内容）。② **外链**——`internalLinkFromUrl` 解析不出内链时调 `onExternalLinkActivated(url)`，此前实现直接 startActivity（Phase 0 注释里就写着「Phase 1 READ-09 加用户确认弹窗」，本刀补上）。③ **onJumpToLocator 不可用作历史信号**——只在 `go(locator)` 与 FXL 跨资源 goForward/goBackward 触发，与显式跳转混用会与 back/forward 循环；历史 push 维持在 VM 显式跳转入口 + `shouldFollowInternalLink` 返回 true 前。

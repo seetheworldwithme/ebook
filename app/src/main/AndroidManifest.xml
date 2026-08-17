@@ -28,13 +28,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- IMP-02：接收文件管理器 / 分享面板打开电子书（ACTION_VIEW / ACTION_SEND）。 -->
+            <!-- IMP-02：接收文件管理器 / 分享面板打开电子书（ACTION_VIEW / ACTION_SEND）。
+                 V1 PDF/CBZ：追加 pdf 与 comic zip 两族 mime（x-cbz 兜底部分管理器的非标准声明）。 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/epub+zip" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.comic+zip" />
+                <data android:mimeType="application/x-cbz" />
             </intent-filter>
         </activity>
     </application>

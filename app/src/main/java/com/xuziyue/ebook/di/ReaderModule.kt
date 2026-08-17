@@ -9,6 +9,8 @@ import com.xuziyue.ebook.data.AppSettingsRepository
 import com.xuziyue.ebook.data.BookFileImporter
 import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
+import org.readium.adapter.pdfium.navigator.PdfiumDefaults
+import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import com.xuziyue.ebook.reader.readium.ExtractPublicationMetadataUseCase
 import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
@@ -44,6 +46,17 @@ object ReaderModule {
     @Singleton
     fun provideOpenBookUseCase(facade: ReadiumFacade): OpenBookUseCase =
         OpenBookUseCase(facade)
+
+    /**
+     * V1 PDF：Pdfium 渲染引擎 Provider（PdfNavigatorFactory / dummy factory 的公共依赖）。
+     * 默认配置（PdfiumDefaults）即可——Fit/间距等偏好推后，pinch 缩放 PDFView 内置。
+     * 注意 PdfiumEngineProvider 非泛型（实现 PdfEngineProvider 时已固化类型参数）。
+     */
+    @OptIn(org.readium.r2.shared.ExperimentalReadiumApi::class)
+    @Provides
+    @Singleton
+    fun providePdfiumEngineProvider(): PdfiumEngineProvider =
+        PdfiumEngineProvider(PdfiumDefaults())
 
     @Provides
     @Singleton

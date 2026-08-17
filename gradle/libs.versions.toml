@@ -47,6 +47,14 @@ readium-shared = { group = "org.readium.kotlin-toolkit", name = "readium-shared"
 readium-streamer = { group = "org.readium.kotlin-toolkit", name = "readium-streamer", version.ref = "readium" }
 readium-navigator = { group = "org.readium.kotlin-toolkit", name = "readium-navigator", version.ref = "readium" }
 readium-adapter-pdfium = { group = "org.readium.kotlin-toolkit", name = "readium-adapter-pdfium", version.ref = "readium" }
+# V1 PDF：aggregator 是空壳（只有 BuildConfig），PdfiumEngineProvider/Preferences 实际在
+# readium-adapter-pdfium-navigator；document 子工件（PdfiumDocumentFactory）经其 POM 传递。
+readium-adapter-pdfium-navigator = { group = "org.readium.kotlin-toolkit", name = "readium-adapter-pdfium-navigator", version.ref = "readium" }
+# V1 PDF 踩坑（同 READ-10 media3）：pdfium-navigator 的 POM 把 barteksc 两件套声明为 runtime scope，
+# compile classpath 缺 PDFView/PdfiumCore → KSP 解析 PdfiumEngineProvider.Listener.onConfigurePdfView(PDFView)
+# 签名时类型断裂，报「could not be resolved」。显式声明为编译期依赖（Apache-2.0 已在许可证清单）。
+pdfium-android-pdfviewer = { group = "com.github.marain87", name = "AndroidPdfViewer", version = "3.2.8" }
+pdfium-android-core = { group = "com.github.marain87", name = "PdfiumAndroid", version = "1.9.8" }
 # READ-10 TTS：独立工件（新架构 org.readium.navigator.media.tts，不在 readium-navigator 内）。
 readium-navigator-media-tts = { group = "org.readium.kotlin-toolkit", name = "readium-navigator-media-tts", version.ref = "readium" }
 # media-tts 的 POM 把 media3 声明为 runtime scope，编译期要用其类型（PlaybackParameters 等）须显式引入。
@@ -112,6 +120,6 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 
 [bundles]
-readium = ["readium-shared", "readium-streamer", "readium-navigator", "readium-adapter-pdfium"]
+readium = ["readium-shared", "readium-streamer", "readium-navigator", "readium-adapter-pdfium", "readium-adapter-pdfium-navigator"]
 compose = ["compose-ui", "compose-ui-graphics", "compose-ui-tooling-preview", "compose-foundation", "compose-material3", "compose-material-icons-extended", "androidx-activity-compose", "androidx-lifecycle-runtime-compose"]
 room = ["androidx-room-runtime", "androidx-room-ktx"]

@@ -61,9 +61,10 @@ class ImportBookUseCase(
 
         val ext = file.extension.lowercase()
 
-        // 2. EPUB 安全校验（REL-04 红线 #4）：ZIP 结构预检——Zip Slip / 压缩炸弹 / 损坏 / 超限。
+        // 2. ZIP 类格式安全校验（REL-04 红线 #4）：EPUB / CBZ 走 ZIP 结构预检——
+        //    Zip Slip / 压缩炸弹 / 损坏 / 超限；PDF 非 ZIP 结构绝不能过 ZipFile 校验。
         //    校验失败删书文件（无 DB 引用，安全），返回可理解错误。
-        if (ext == "epub") {
+        if (ext in ZIP_BASED_EXTENSIONS) {
             val result = securityValidator.validate(file)
             if (result is EpubSecurityResult.Unsafe) {
                 file.delete()
@@ -95,7 +96,7 @@ class ImportBookUseCase(
             description = meta.description,
             language = meta.language,
             format = ext.uppercase(),
-            mediaType = if (ext.equals("txt", ignoreCase = true)) "text/plain" else "application/epub+zip",
+            mediaType = mediaTypeForExtension(ext),
             filePath = file.absolutePath,
             fileSize = file.length(),
             coverPath = coverPath,
@@ -167,4 +168,18 @@ fun ImportBookUseCase.Outcome.bookIdOrNull(): String? = when (this) {
     is ImportBookUseCase.Outcome.Imported -> bookId
     is ImportBookUseCase.Outcome.AlreadyExists -> bookId
     is ImportBookUseCase.Outcome.Failed -> null
+}
+
+/** ZIP 容器格式（走 EpubSecurityValidator 的 ZIP 结构预检）；PDF 非 ZIP 绝不能过 ZipFile 校验。 */
+private val ZIP_BASED_EXTENSIONS = setOf("epub", "cbz")
+
+/**
+ * 扩展名 → 标准 mediaType（V1 PDF/CBZ 抽纯函数，可单测）。
+ * 未知扩展名兜底 epub 的 mediaType（importer 层无扩展名时已按 .epub 落盘）。
+ */
+fun mediaTypeForExtension(ext: String): String = when (ext.lowercase()) {
+    "txt" -> "text/plain"
+    "pdf" -> "application/pdf"
+    "cbz" -> "application/vnd.comic+zip"
+    else -> "application/epub+zip"
 }

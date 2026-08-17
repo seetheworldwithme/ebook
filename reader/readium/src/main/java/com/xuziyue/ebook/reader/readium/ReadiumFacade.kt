@@ -1,6 +1,7 @@
 package com.xuziyue.ebook.reader.readium
 
 import android.content.Context
+import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.streamer.PublicationOpener
@@ -29,8 +30,9 @@ class ReadiumFacade(context: Context) {
     /**
      * Publication 打开器。
      *
-     * - [DefaultPublicationParser] 负责把 Asset 解析成 Publication（EPUB / CBZ / PDF 等）。
-     * - pdfFactory 留空（P0/MVP 不含 PDF，PDF 推后到 V1）。
+     * - [DefaultPublicationParser] 负责把 Asset 解析成 Publication（EPUB / CBZ / PDF 等）；
+     *   ImageParser（CBZ→图片序列）由其内部固定挂载，无需配置。
+     * - V1 PDF：接入 Pdfium 适配（`marain87:PdfiumAndroid:1.9.8`，Apache-2.0 已在许可证清单）。
      * - contentProtections 留空（无 LCP/DRM）。
      */
     val publicationOpener = PublicationOpener(
@@ -38,8 +40,7 @@ class ReadiumFacade(context: Context) {
             context,
             assetRetriever = assetRetriever,
             httpClient = httpClient,
-            // P0/MVP 不含 PDF（PDF 推后到 V1）；传 null 即不解析 PDF。
-            pdfFactory = null,
+            pdfFactory = PdfiumDocumentFactory(context),
         ),
         contentProtections = emptyList(),
     )

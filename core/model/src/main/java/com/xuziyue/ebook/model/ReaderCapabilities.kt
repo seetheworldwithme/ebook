@@ -6,7 +6,7 @@ package com.xuziyue.ebook.model
  * 能力判断不依据原始文件后缀，而依据打开后的 Publication conformsTo 探测结果：
  * TXT 经 P0V-04 转 EPUB 后属 [EPUB]，能力等同 EPUB。
  */
-enum class ReaderFormat { EPUB, PDF }
+enum class ReaderFormat { EPUB, PDF, CBZ }
 
 /**
  * 当前 Publication 的能力矩阵（CLAUDE.md 红线 #2：UI 必须由此驱动，不按扩展名承诺能力）。
@@ -29,6 +29,8 @@ data class ReaderCapabilities(
     val canAnnotate: Boolean, // READ-07 笔记（依赖文字选择）
     val canCopyShare: Boolean, // READ-07 复制/系统分享（依赖文字选择）
     val canTts: Boolean, // READ-10 TTS（P1）
+    val canAdjustTypography: Boolean, // TYPE-01/02 排版控件（字号/字体/主题等；重排版 EPUB 专属）
+    val canSwitchPagingMode: Boolean, // READ-04 分页/滚动开关（PDF scrollAxis 支持；CBZ 无此偏好）
 ) {
     companion object {
         /**
@@ -36,7 +38,10 @@ data class ReaderCapabilities(
          *
          * - EPUB：全能力（[canSearch] 取 [isSearchable] 探针值；EPUB 恒注册 StringSearchService，实测为 true）。
          * - PDF：浏览/搜索/书签可用；文字选择/高亮/笔记/复制分享/TTS 不支持
-         *   （Readium issue #823，design.md:48/130），对应字段 false。
+         *   （Readium issue #823，design.md:48/130），对应字段 false；排版控件不适用
+         *   （PDF 页面是固定版式位图），但支持滚动/单页切换（scrollAxis）。
+         * - CBZ：图片序列——浏览/书签/位置恢复可用；无目录/搜索/批注/排版语义
+         *   （ImageNavigator 无 Configurable，翻页方式不可切）。
          */
         fun from(format: ReaderFormat, isSearchable: Boolean): ReaderCapabilities = when (format) {
             ReaderFormat.EPUB -> ReaderCapabilities(
@@ -51,6 +56,8 @@ data class ReaderCapabilities(
                 canAnnotate = true,
                 canCopyShare = true,
                 canTts = true,
+                canAdjustTypography = true,
+                canSwitchPagingMode = true,
             )
             ReaderFormat.PDF -> ReaderCapabilities(
                 format = format,
@@ -65,6 +72,27 @@ data class ReaderCapabilities(
                 canAnnotate = false,
                 canCopyShare = false,
                 canTts = false,
+                // PDF 是固定版式：字号/字体/行高等重排版无意义；主题反色属图像处理推后。
+                canAdjustTypography = false,
+                // scrollAxis 表达连续滚动 / 单页，与 EPUB「翻页方式」共用同一开关。
+                canSwitchPagingMode = true,
+            )
+            ReaderFormat.CBZ -> ReaderCapabilities(
+                format = format,
+                canOpen = true,
+                canNavigate = true,
+                // 漫画图片序列无 outline 目录（ImageParser 不产 tableOfContents）。
+                canToc = false,
+                canSearch = false,
+                canBookmark = true,
+                canRestorePosition = true,
+                canHighlight = false,
+                canAnnotate = false,
+                canCopyShare = false,
+                canTts = false,
+                canAdjustTypography = false,
+                // ImageNavigator 无 Configurable（无偏好接口），翻页方式不可切。
+                canSwitchPagingMode = false,
             )
         }
 
@@ -81,5 +109,10 @@ data class ReaderCapabilities(
          */
         fun forPdf(isSearchable: Boolean = true): ReaderCapabilities =
             from(ReaderFormat.PDF, isSearchable)
+
+        /**
+         * CBZ 预定义工厂（V1：浏览/书签/恢复，无目录/搜索/批注/排版）。
+         */
+        fun forCbz(): ReaderCapabilities = from(ReaderFormat.CBZ, isSearchable = false)
     }
 }

@@ -17,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentFactory
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.Lifecycle
@@ -29,9 +30,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import org.readium.r2.navigator.Decoration
+import org.readium.r2.navigator.Navigator
+import org.readium.r2.navigator.OverflowableNavigator
+import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.navigator.image.ImageNavigatorFragment
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
+import org.readium.adapter.pdfium.navigator.PdfiumPreferences
+import org.readium.r2.navigator.pdf.PdfNavigatorFragment
 import org.readium.r2.navigator.preferences.FontFamily
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.services.locateProgression
@@ -54,7 +61,8 @@ class ReaderFragment : Fragment() {
 
     private val viewModel: ReaderViewModel by activityViewModels()
 
-    private var navigator: EpubNavigatorFragment? = null
+    /** 当前 Navigator（V1 三格式：EpubNavigatorFragment / PdfNavigatorFragment / ImageNavigatorFragment 共同实现 Navigator）。 */
+    private var navigator: Navigator? = null
     /** 当前 Navigator 实际绑定的书；不同书绝不复用同一实例。 */
     private var navigatorBookId: String? = null
     /** Navigator 更换时取消旧 Locator/偏好/指令订阅，防止迟到回调串书。 */
@@ -89,16 +97,56 @@ class ReaderFragment : Fragment() {
         childFragmentManager.fragmentFactory = when (val state = viewModel.uiState.value) {
             is ReaderUiState.Ready -> {
                 navigatorBookId = state.bookId
-                state.navigatorFactory.createFragmentFactory(
-                    initialLocator = viewModel.restoreLocatorForNavigator(state),
-                    initialPreferences = state.preferences,
-                    listener = viewModel,
-                    configuration = navigatorConfiguration(),
-                )
+                createRealFactory(state)
             }
-            else -> EpubNavigatorFragment.createDummyFactory()
+            else -> createAllFormatsDummyFactory()
         }
         super.onCreate(savedInstanceState)
+    }
+
+    /** 按 [NavigatorSpec] 分支构造三种真实 Navigator 的 FragmentFactory（V1 PDF/CBZ）。 */
+    @OptIn(ExperimentalReadiumApi::class)
+    private fun createRealFactory(state: ReaderUiState.Ready): FragmentFactory {
+        val restoreLocator = viewModel.restoreLocatorForNavigator(state)
+        return when (val spec = state.navigatorSpec) {
+            is NavigatorSpec.Epub -> spec.navigatorFactory.createFragmentFactory(
+                initialLocator = restoreLocator ?: spec.initialLocator,
+                initialPreferences = spec.initialPreferences,
+                listener = viewModel,
+                configuration = navigatorConfiguration(),
+            )
+            is NavigatorSpec.Pdf -> PdfNavigatorFragment.createFactory(
+                publication = spec.publication,
+                initialLocator = restoreLocator ?: spec.initialLocator,
+                preferences = spec.initialPreferences,
+                listener = viewModel,
+                pdfEngineProvider = spec.engineProvider,
+            )
+            is NavigatorSpec.Cbz -> ImageNavigatorFragment.createFactory(
+                publication = spec.publication,
+                initialLocator = restoreLocator ?: spec.initialLocator,
+                listener = viewModel,
+            )
+        }
+    }
+
+    /**
+     * 三格式复合 dummy factory（V1 PDF/CBZ）：按恢复的 child class 名分发到对应格式的 dummy。
+     *
+     * 进程重建时 uiState 尚未 Ready，super.onCreate 恢复 child 的 class 由上次会话决定
+     * （可能是三种 Navigator 之一）；单格式 dummy 会在格式不匹配时恢复失败崩溃。
+     */
+    @OptIn(ExperimentalReadiumApi::class)
+    private fun createAllFormatsDummyFactory(): FragmentFactory = object : FragmentFactory() {
+        override fun instantiate(classLoader: ClassLoader, className: String): Fragment =
+            when (className) {
+                PdfNavigatorFragment::class.java.name ->
+                    PdfNavigatorFragment.createDummyFactory(viewModel.pdfEngineProviderForRestore())
+                        .instantiate(classLoader, className)
+                ImageNavigatorFragment::class.java.name ->
+                    ImageNavigatorFragment.createDummyFactory().instantiate(classLoader, className)
+                else -> EpubNavigatorFragment.createDummyFactory().instantiate(classLoader, className)
+            }
     }
 
     override fun onCreateView(
@@ -140,7 +188,7 @@ class ReaderFragment : Fragment() {
         }
 
         // 旋转恢复：super.onCreate 已用真实 factory 恢复了 navigator，直接复用。
-        val existing = childFragmentManager.findFragmentByTag(NAV_TAG) as? EpubNavigatorFragment
+        val existing = childFragmentManager.findFragmentByTag(NAV_TAG) as? Navigator
         if (existing != null) {
             navigator = existing
             navigatorBookId = state.bookId
@@ -148,17 +196,17 @@ class ReaderFragment : Fragment() {
             return
         }
 
-        // 首次 / 进程重建：dummy 已移除，创建真实 navigator。
-        childFragmentManager.fragmentFactory = state.navigatorFactory.createFragmentFactory(
-            initialLocator = viewModel.restoreLocatorForNavigator(state),
-            initialPreferences = state.preferences,
-            listener = viewModel,
-            configuration = navigatorConfiguration(),
-        )
-        childFragmentManager.commitNow {
-            add(R.id.navigator_container, EpubNavigatorFragment::class.java, null, NAV_TAG)
+        // 首次 / 进程重建：dummy 已移除，按 spec 创建真实 navigator。
+        childFragmentManager.fragmentFactory = createRealFactory(state)
+        val navigatorClass = when (state.navigatorSpec) {
+            is NavigatorSpec.Epub -> EpubNavigatorFragment::class.java
+            is NavigatorSpec.Pdf -> PdfNavigatorFragment::class.java
+            is NavigatorSpec.Cbz -> ImageNavigatorFragment::class.java
         }
-        navigator = childFragmentManager.findFragmentByTag(NAV_TAG) as? EpubNavigatorFragment
+        childFragmentManager.commitNow {
+            add(R.id.navigator_container, navigatorClass, null, NAV_TAG)
+        }
+        navigator = childFragmentManager.findFragmentByTag(NAV_TAG) as? Navigator
         navigatorBookId = state.bookId
         bindNavigatorObservers(state.bookId)
     }
@@ -167,7 +215,7 @@ class ReaderFragment : Fragment() {
     private fun removeExistingNavigator() {
         navigatorBindingJob?.cancel()
         navigatorBindingJob = null
-        navigator?.removeInputListener(barsToggleInputListener)
+        (navigator as? VisualNavigator)?.removeInputListener(barsToggleInputListener)
         childFragmentManager.findFragmentByTag(NAV_TAG)?.let {
             childFragmentManager.commitNow { remove(it) }
         }
@@ -179,12 +227,15 @@ class ReaderFragment : Fragment() {
     private fun bindNavigatorObservers(bookId: String) {
         val nav = navigator ?: return
         // READ-02：注册控制栏切换监听（先移除再加，旋转重绑同一 navigator 时幂等，不重复触发）。
-        nav.removeInputListener(barsToggleInputListener)
-        nav.addInputListener(barsToggleInputListener)
+        // 三种 Navigator 均实现 VisualNavigator（add/removeInputListener 公共接口）。
+        (nav as? VisualNavigator)?.let { visualNav ->
+            visualNav.removeInputListener(barsToggleInputListener)
+            visualNav.addInputListener(barsToggleInputListener)
+        }
         navigatorBindingJob?.cancel()
         navigatorBindingJob = viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                // currentLocator → VM（进度 + 防抖落盘）
+                // currentLocator → VM（进度 + 防抖落盘）——三格式公共。
                 launch {
                     var firstPage = true
                     nav.currentLocator.collect {
@@ -193,31 +244,41 @@ class ReaderFragment : Fragment() {
                         viewModel.onLocatorUpdated(bookId, it)
                     }
                 }
-                // preferences → submitPreferences（字号/主题实时生效）
-                launch { viewModel.preferences.collect { nav.submitPreferences(it) } }
-                // decorations → applyDecorations（高亮渲染，声明整组完整状态）
-                launch { viewModel.decorations.collect { nav.applyDecorations(it, DECORATION_GROUP) } }
+                // 偏好实时生效：EPUB 走 EpubPreferences，PDF 走 PdfiumPreferences（仅翻页方式），CBZ 无偏好。
+                if (nav is EpubNavigatorFragment) {
+                    launch { viewModel.preferences.collect { nav.submitPreferences(it) } }
+                } else if (nav is PdfNavigatorFragment<*, *>) {
+                    // star projection 上不能调 submitPreferences(P)，用 run 找回具体类型。
+                    @Suppress("UNCHECKED_CAST")
+                    val pdfNav = nav as PdfNavigatorFragment<*, PdfiumPreferences>
+                    launch { viewModel.pdfPreferences.collect { pdfNav.submitPreferences(it) } }
+                }
+                // EPUB 专属：高亮 Decoration 渲染（红线 #9 DB 驱动）。
+                (nav as? EpubNavigatorFragment)?.let { epubNav ->
+                    launch { viewModel.decorations.collect { epubNav.applyDecorations(it, DECORATION_GROUP) } }
+                }
                 // READ-03：音量键翻页开关 → 更新本地拦截标志（interceptor 读它决定消费 / 放行）。
                 launch { viewModel.volumeKeyPaging.collect { volumeKeyPaging = it } }
                 // READ-10：TTS 播放态 → 音量键放行标志。
                 launch { viewModel.ttsPlaying.collect { ttsPlaying = it } }
-                // READ-10：当前朗读句 → tts Decoration 组（蓝色，与用户高亮区分；组独立互不干扰）。
-                launch {
-                    viewModel.ttsUtterance.collect { locator ->
-                        val target = navigator ?: return@collect
-                        if (locator == null) {
-                            target.applyDecorations(emptyList(), DECORATION_GROUP_TTS)
-                        } else {
-                            target.applyDecorations(
-                                listOf(
-                                    Decoration(
-                                        id = "tts-utterance",
-                                        locator = locator,
-                                        style = Decoration.Style.Underline(tint = 0xFF2196F3.toInt()),
+                // READ-10：当前朗读句 → tts Decoration 组（EPUB 专属；canTts gating 保证 PDF/CBZ 不产生朗读）。
+                (nav as? EpubNavigatorFragment)?.let { epubNav ->
+                    launch {
+                        viewModel.ttsUtterance.collect { locator ->
+                            if (locator == null) {
+                                epubNav.applyDecorations(emptyList(), DECORATION_GROUP_TTS)
+                            } else {
+                                epubNav.applyDecorations(
+                                    listOf(
+                                        Decoration(
+                                            id = "tts-utterance",
+                                            locator = locator,
+                                            style = Decoration.Style.Underline(tint = 0xFF2196F3.toInt()),
+                                        ),
                                     ),
-                                ),
-                                DECORATION_GROUP_TTS,
-                            )
+                                    DECORATION_GROUP_TTS,
+                                )
+                            }
                         }
                     }
                 }
@@ -229,7 +290,7 @@ class ReaderFragment : Fragment() {
                         if (locator != null) navigator?.go(locator, animated = false)
                     }
                 }
-                // navCommands → 执行目录 / 进度 / 返回跳转（READ-02）
+                // navCommands → 执行目录 / 进度 / 返回跳转（READ-02）——三格式公共（go/goForward/goBackward 是 Navigator 接口）。
                 launch {
                     viewModel.navCommands.collect { cmd ->
                         val target = navigator ?: return@collect
@@ -243,8 +304,9 @@ class ReaderFragment : Fragment() {
                             }
                             is ReaderNavCommand.GoBack -> target.go(cmd.locator, animated = false)
                             is ReaderNavCommand.GoToLocator -> target.go(cmd.locator, animated = false)
-                            is ReaderNavCommand.GoForward -> target.goForward(animated = false)
-                            is ReaderNavCommand.GoBackward -> target.goBackward(animated = false)
+                            // 翻页是 OverflowableNavigator 接口（三种 Navigator 均实现）。
+                            is ReaderNavCommand.GoForward -> (target as? OverflowableNavigator)?.goForward(animated = false)
+                            is ReaderNavCommand.GoBackward -> (target as? OverflowableNavigator)?.goBackward(animated = false)
                         }
                     }
                 }
@@ -277,10 +339,10 @@ class ReaderFragment : Fragment() {
             when (item.itemId) {
                 MENU_HIGHLIGHT_ID -> {
                     lifecycleScope.launch {
-                        val selection = navigator?.currentSelection()
+                        val selection = (navigator as? EpubNavigatorFragment)?.currentSelection()
                         if (selection != null) {
                             viewModel.addHighlight(selection.locator)
-                            navigator?.clearSelection()
+                            (navigator as? EpubNavigatorFragment)?.clearSelection()
                         }
                         mode.finish()
                     }
@@ -309,7 +371,7 @@ class ReaderFragment : Fragment() {
 
     /** 复制选中文字到系统剪贴板（READ-07；空选区不操作；Toast 反馈，部分 ROM 不弹系统复制提示）。 */
     private suspend fun copySelection() {
-        val text = navigator?.currentSelection()?.locator?.text?.highlight
+        val text = (navigator as? EpubNavigatorFragment)?.currentSelection()?.locator?.text?.highlight
         if (text.isNullOrBlank()) return
         val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
         clipboard.setPrimaryClip(ClipData.newPlainText("ebook", text))
@@ -318,7 +380,7 @@ class ReaderFragment : Fragment() {
 
     /** 系统分享选中文字（READ-07；空选区不操作；交系统 chooser 选择目标）。 */
     private suspend fun shareSelection() {
-        val text = navigator?.currentSelection()?.locator?.text?.highlight
+        val text = (navigator as? EpubNavigatorFragment)?.currentSelection()?.locator?.text?.highlight
         if (text.isNullOrBlank()) return
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
@@ -357,8 +419,8 @@ class ReaderFragment : Fragment() {
             event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return false
         if (event.action == KeyEvent.ACTION_UP) {
             when (event.keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> navigator?.goBackward(false)
-                KeyEvent.KEYCODE_VOLUME_DOWN -> navigator?.goForward(false)
+                KeyEvent.KEYCODE_VOLUME_UP -> (navigator as? OverflowableNavigator)?.goBackward(false)
+                KeyEvent.KEYCODE_VOLUME_DOWN -> (navigator as? OverflowableNavigator)?.goForward(false)
             }
         }
         return true // 消费 DOWN + UP，阻止系统调音量

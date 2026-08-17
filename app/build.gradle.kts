@@ -85,6 +85,14 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":reader:readium"))
+    // V1 PDF：app 层直接引用 PdfiumEngineProvider / PdfNavigatorFragment / ImageNavigatorFragment
+    //（经 :reader:readium 的 api 传递理论上可达，但 KSP 解析失败，显式声明更稳）。
+    implementation(libs.readium.adapter.pdfium.navigator)
+    // V1 PDF 踩坑：pdfium-navigator 的 POM 把 barteksc 两件套声明为 runtime scope，KSP 解析
+    // PdfiumEngineProvider 完整签名（Listener.onConfigurePdfView(PDFView.Configurator)）需要编译期
+    // 可见，须显式补 compile 依赖（同 READ-10 media3-common-ktx 的 runtime-scope 坑）。
+    implementation(libs.pdfium.android.pdfviewer)
+    implementation(libs.pdfium.android.core)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 

@@ -27,6 +27,8 @@ class ReaderCapabilitiesTest {
         assertTrue(caps.canAnnotate)
         assertTrue(caps.canCopyShare)
         assertTrue(caps.canTts)
+        assertTrue(caps.canAdjustTypography)
+        assertTrue(caps.canSwitchPagingMode)
     }
 
     @Test
@@ -46,6 +48,30 @@ class ReaderCapabilitiesTest {
         assertFalse(caps.canAnnotate)
         assertFalse(caps.canCopyShare)
         assertFalse(caps.canTts)
+        // 固定版式：排版控件不适用；但支持连续滚动/单页切换（scrollAxis）
+        assertFalse(caps.canAdjustTypography)
+        assertTrue(caps.canSwitchPagingMode)
+    }
+
+    @Test
+    fun `forCbz 浏览_书签_恢复可用，目录搜索批注排版全不可用`() {
+        val caps = ReaderCapabilities.forCbz()
+        assertEquals(ReaderFormat.CBZ, caps.format)
+        // 浏览 / 书签 / 恢复可用
+        assertTrue(caps.canOpen)
+        assertTrue(caps.canNavigate)
+        assertTrue(caps.canBookmark)
+        assertTrue(caps.canRestorePosition)
+        // 漫画图片序列：目录（无 outline）/ 搜索 / 批注 / TTS 全不可用
+        assertFalse(caps.canToc)
+        assertFalse(caps.canSearch)
+        assertFalse(caps.canHighlight)
+        assertFalse(caps.canAnnotate)
+        assertFalse(caps.canCopyShare)
+        assertFalse(caps.canTts)
+        // ImageNavigator 无 Configurable：排版与翻页方式均不可调
+        assertFalse(caps.canAdjustTypography)
+        assertFalse(caps.canSwitchPagingMode)
     }
 
     @Test

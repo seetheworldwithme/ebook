@@ -368,7 +368,17 @@ private fun LibraryScreen(
                         Text(if (viewMode == LibraryViewMode.LIST) stringResource(R.string.library_view_grid) else stringResource(R.string.library_view_list))
                     }
                     OutlinedButton(onClick = {
-                        launcher.launch(arrayOf("application/epub+zip", "text/plain", "*/*"))
+                        // V1 PDF/CBZ：文档选择器 mime 追加 pdf 与 comic zip（目录扫描入口的格式白名单在 ScanConfig）。
+                        launcher.launch(
+                            arrayOf(
+                                "application/epub+zip",
+                                "text/plain",
+                                "application/pdf",
+                                "application/vnd.comic+zip",
+                                "application/x-cbz",
+                                "*/*",
+                            ),
+                        )
                     }) { Text(stringResource(R.string.library_import)) }
                     // SET-05：设置入口（隐私说明 / 开源许可证 / 崩溃日志）。
                     IconButton(onClick = onOpenSettings) {

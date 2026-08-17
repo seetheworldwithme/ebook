@@ -37,8 +37,8 @@ data class ScanReport(
 
 /** 扫描配置（阈值集中，便于测试注入低限）。 */
 data class ScanConfig(
-    /** 支持的扩展名（小写，不含点）。 */
-    val supportedExtensions: Set<String> = setOf("epub", "txt"),
+    /** 支持的扩展名（小写，不含点）。V1 PDF/CBZ 起支持（此前 pdf 被扫描跳过，自此反转）。 */
+    val supportedExtensions: Set<String> = setOf("epub", "txt", "pdf", "cbz"),
     /** 单次扫描条目上限（枚举层截断，防病态目录树）。 */
     val maxEntries: Int = 5_000,
 ) {

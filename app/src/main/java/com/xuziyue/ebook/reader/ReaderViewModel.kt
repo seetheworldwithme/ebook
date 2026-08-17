@@ -21,6 +21,7 @@ import com.xuziyue.ebook.data.mergeTypography
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderCapabilities
 import com.xuziyue.ebook.model.ReaderDisplaySettings
+import com.xuziyue.ebook.model.ReaderFormat
 import com.xuziyue.ebook.model.ReaderOrientation
 import com.xuziyue.ebook.model.ReaderScrollMode
 import com.xuziyue.ebook.model.ReaderTextAlign
@@ -30,7 +31,9 @@ import com.xuziyue.ebook.reader.readium.OpenBookUseCase
 import com.xuziyue.ebook.ui.UserMessage
 import com.xuziyue.ebook.reader.readium.OpenTxtPublicationUseCase
 import com.xuziyue.ebook.reader.readium.toEpubPreferences
+import com.xuziyue.ebook.reader.readium.toPdfiumPreferences
 import com.xuziyue.ebook.reader.readium.toReaderCapabilities
+import com.xuziyue.ebook.reader.readium.toReaderFormat
 import com.xuziyue.ebook.reader.tts.ReaderTtsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -57,6 +60,10 @@ import org.readium.r2.navigator.HyperlinkNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubPreferences
+import org.readium.r2.navigator.image.ImageNavigatorFragment
+import org.readium.r2.navigator.pdf.PdfNavigatorFragment
+import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
+import org.readium.adapter.pdfium.navigator.PdfiumPreferences
 import org.readium.navigator.media.tts.android.AndroidTtsEngine
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.Link
@@ -100,7 +107,8 @@ class ReaderViewModel @Inject constructor(
     private val sessionRepository: ReadingSessionRepository,
     private val exportUseCase: ExportBookDataUseCase,
     private val ttsPreferencesRepository: ReaderTtsPreferencesRepository,
-) : ViewModel(), EpubNavigatorFragment.Listener {
+    private val pdfEngineProvider: PdfiumEngineProvider,
+) : ViewModel(), EpubNavigatorFragment.Listener, PdfNavigatorFragment.Listener, ImageNavigatorFragment.Listener {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -168,6 +176,15 @@ class ReaderViewModel @Inject constructor(
     val preferences: StateFlow<EpubPreferences> =
         combine(typography, _systemDark, _systemFontScale) { t, dark, scale -> t.toEpubPreferences(dark, scale) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default.toEpubPreferences(isSystemDark = false))
+
+    /**
+     * PDF（V1）：全局排版偏好的「翻页方式」映射为 PdfiumPreferences（scroll→scrollAxis）。
+     * ReaderFragment 在 navigator 是 PDF 时 collect 本 flow → submitPreferences；
+     * 其余格式不消费。固定版式的字号/字体/主题等不映射（canAdjustTypography=false 已 gating UI）。
+     */
+    val pdfPreferences: StateFlow<PdfiumPreferences> = typography
+        .map { it.toPdfiumPreferences() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default.toPdfiumPreferences())
 
     /** 最近 Locator（Flow 源，供 isBookmarked 响应式判定；[latestLocator] 取值直读 .value）。 */
     private val _latestLocator = MutableStateFlow<Locator?>(null)
@@ -298,8 +315,14 @@ class ReaderViewModel @Inject constructor(
             activeBookId = currentBookId,
             readyBookId = state.bookId,
             latestLocator = latestLocator,
-            initialLocator = state.initialLocator,
+            initialLocator = state.navigatorSpec.initialLocator,
         )
+
+    /**
+     * 进程重建时 ReaderFragment 复合 dummy factory 需要 PdfiumEngineProvider
+     * （PdfNavigatorFragment.createDummyFactory 的入参）；直接透传注入的单例。
+     */
+    fun pdfEngineProviderForRestore() = pdfEngineProvider
 
     private fun openPublication(bookId: String) {
         openJob = viewModelScope.launch {
@@ -333,7 +356,8 @@ class ReaderViewModel @Inject constructor(
                     }
                     // 能力来自打开后的 Publication（conformsTo + isSearchable），非扩展名（红线 #2）。
                     _capabilities.value = publication.toReaderCapabilities()
-                    // 扁平化目录（含嵌套 children → depth 缩进）
+                    // 扁平化目录（含嵌套 children → depth 缩进）；PDF 取 outline（PdfiumDocument），
+                    // CBZ 无目录语义（canToc=false 已 gating 入口）。
                     _tableOfContents.value = flattenTableOfContents(publication.tableOfContents)
                     val savedLocator = progressRepository.getLocator(bookId) // Room 替代 LocatorStore
                     val initialLocator = savedLocator?.takeIf {
@@ -350,14 +374,32 @@ class ReaderViewModel @Inject constructor(
                         publication.close()
                         return@onSuccess
                     }
-                    val factory = EpubNavigatorFactory(publication)
+                    // V1 PDF/CBZ：按 Publication 实际格式构造 NavigatorSpec（打开层分流，非能力层）。
+                    val spec = when (publication.toReaderFormat()) {
+                        ReaderFormat.PDF -> NavigatorSpec.Pdf(
+                            publication = publication,
+                            engineProvider = pdfEngineProvider,
+                            // 派生偏好的当前快照；后续 Fragment 持续 collect pdfPreferences 覆盖。
+                            initialPreferences = pdfPreferences.value,
+                            initialLocator = initialLocator,
+                        )
+                        ReaderFormat.CBZ -> NavigatorSpec.Cbz(
+                            publication = publication,
+                            initialLocator = initialLocator,
+                        )
+                        // EPUB（含 TXT 转 EPUB）：能力层与打开层均等同 EPUB。
+                        ReaderFormat.EPUB -> NavigatorSpec.Epub(
+                            publication = publication,
+                            navigatorFactory = EpubNavigatorFactory(publication),
+                            // 派生偏好的当前快照（含 SYSTEM 解析）；后续 Fragment 持续 collect preferences 覆盖。
+                            initialPreferences = preferences.value,
+                            initialLocator = initialLocator,
+                        )
+                    }
                     _uiState.value = ReaderUiState.Ready(
                         bookId = bookId,
                         publication = publication,
-                        navigatorFactory = factory,
-                        initialLocator = initialLocator,
-                        // 派生偏好的当前快照（含 SYSTEM 解析）；后续 Fragment 持续 collect preferences 覆盖。
-                        preferences = preferences.value,
+                        navigatorSpec = spec,
                     )
                     // REL-05 性能基线：Publication 已开 + 恢复 Locator 已就绪（渲染前）。
                     Timber.i("PERF_READER_OPEN_READY bookId=$bookId")

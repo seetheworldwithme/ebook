@@ -355,6 +355,8 @@ fun ReaderScreen(
                 annotationCount = annotations.size,
                 canBookmark = capabilities.canBookmark,
                 canHighlight = capabilities.canHighlight,
+                // V1 PDF/CBZ：固定版式无字号调节（canAdjustTypography gating，红线 #2）。
+                canAdjustTypography = capabilities.canAdjustTypography,
             )
         }
 
@@ -366,6 +368,10 @@ fun ReaderScreen(
                 displaySettings = displaySettings,
                 perBookTypography = perBookTypography,
                 hasBookOverride = hasBookOverride,
+                // V1 PDF/CBZ：排版区（字号/字体/主题/按书开关）与翻页方式按能力显隐（红线 #2）；
+                // 显示区（亮度/常亮/方向）与音量键是 Window/app 层设置，与格式无关恒显。
+                canAdjustTypography = capabilities.canAdjustTypography,
+                canSwitchPagingMode = capabilities.canSwitchPagingMode,
                 onDismiss = { showTypography = false },
                 onFontSize = { viewModel.setFontSize(it) },
                 onFontWeight = { viewModel.setFontWeight(it) },
@@ -655,6 +661,7 @@ private fun ReaderBottomBar(
     annotationCount: Int,
     canBookmark: Boolean,
     canHighlight: Boolean,
+    canAdjustTypography: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -667,11 +674,14 @@ private fun ReaderBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onFontDecrease) {
-                Icon(Icons.Default.TextDecrease, contentDescription = stringResource(R.string.reader_font_decrease))
-            }
-            IconButton(onClick = onFontIncrease) {
-                Icon(Icons.Default.TextIncrease, contentDescription = stringResource(R.string.reader_font_increase))
+            // V1 PDF/CBZ：固定版式无字号调节，隐藏 ±（canAdjustTypography gating，红线 #2）。
+            if (canAdjustTypography) {
+                IconButton(onClick = onFontDecrease) {
+                    Icon(Icons.Default.TextDecrease, contentDescription = stringResource(R.string.reader_font_decrease))
+                }
+                IconButton(onClick = onFontIncrease) {
+                    Icon(Icons.Default.TextIncrease, contentDescription = stringResource(R.string.reader_font_increase))
+                }
             }
             IconButton(onClick = onOpenTypography) {
                 Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.reader_typography))
@@ -1120,6 +1130,8 @@ private fun TypographySheet(
     displaySettings: ReaderDisplaySettings,
     perBookTypography: Boolean,
     hasBookOverride: Boolean,
+    canAdjustTypography: Boolean,
+    canSwitchPagingMode: Boolean,
     onDismiss: () -> Unit,
     onFontSize: (Double) -> Unit,
     onFontWeight: (Double) -> Unit,
@@ -1154,107 +1166,126 @@ private fun TypographySheet(
                     .semantics { heading() },
             )
 
-            // 按书排版（TYPE-05）：开关「仅本书生效」+ 恢复全局默认。
-            // 开=把当前排版快照落成本书覆盖（此后改动只写本书）；恢复=删覆盖行回到纯全局。
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 4.dp)
-                    .toggleable(
-                        value = perBookTypography,
-                        onValueChange = { enabled ->
-                            if (enabled) onEnablePerBook() else onDisablePerBook()
-                        },
-                        role = Role.Switch,
+            // V1 PDF/CBZ：排版区（按书开关/字号/字重/行高/段距/页边距/对齐/字体/主题）
+            // 仅重排版格式显示；PDF/CBZ 固定版式（canAdjustTypography=false，红线 #2）。
+            if (canAdjustTypography) {
+                // 按书排版（TYPE-05）：开关「仅本书生效」+ 恢复全局默认。
+                // 开=把当前排版快照落成本书覆盖（此后改动只写本书）；恢复=删覆盖行回到纯全局。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 4.dp)
+                        .toggleable(
+                            value = perBookTypography,
+                            onValueChange = { enabled ->
+                                if (enabled) onEnablePerBook() else onDisablePerBook()
+                            },
+                            role = Role.Switch,
+                        ),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.typography_per_book), style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = perBookTypography,
+                        onCheckedChange = null, // 点击由 Row 的 toggleable 统一处理，避免双重回调
+                    )
+                }
+                if (hasBookOverride) {
+                    TextButton(
+                        onClick = onResetBookTypography,
+                        modifier = Modifier.padding(start = 12.dp),
+                    ) { Text(stringResource(R.string.typography_reset_book)) }
+                }
+
+                TypographySlider(
+                    label = stringResource(R.string.typography_font_size),
+                    value = typography.fontSize ?: 1.0,
+                    range = 0.5..5.0,
+                    valueText = { "${(it * 100).toInt()}%" },
+                    onChange = onFontSize,
+                )
+                // 字重（TYPE-01 欠账，TYPE-05 补）：Readium 归一化 0.75–1.75，1.0=常规；null 显示 1.0。
+                TypographySlider(
+                    label = stringResource(R.string.typography_font_weight),
+                    value = typography.fontWeight ?: 1.0,
+                    range = 0.75..1.75,
+                    valueText = { "%.2f".format(it) },
+                    onChange = onFontWeight,
+                )
+                TypographySlider(
+                    label = stringResource(R.string.typography_line_height),
+                    value = typography.lineHeight ?: 1.0,
+                    range = 1.0..3.0,
+                    valueText = { "%.2f×".format(it) },
+                    onChange = onLineHeight,
+                )
+                TypographySlider(
+                    label = stringResource(R.string.typography_paragraph_spacing),
+                    value = typography.paragraphSpacing ?: 0.0,
+                    range = 0.0..3.0,
+                    valueText = { "%.1f em".format(it) },
+                    onChange = onParagraphSpacing,
+                )
+                TypographySlider(
+                    label = stringResource(R.string.typography_page_margins),
+                    value = typography.pageMargins ?: 1.0,
+                    range = 0.5..4.0,
+                    valueText = { "%.1f×".format(it) },
+                    onChange = onPageMargins,
+                )
+
+                // 对齐（TYPE-01）
+                OptionGroup(
+                    label = stringResource(R.string.typography_align),
+                    options = listOf(
+                        ReaderTextAlign.JUSTIFY to stringResource(R.string.typography_align_justify),
+                        ReaderTextAlign.START to stringResource(R.string.typography_align_start),
                     ),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.typography_per_book), style = MaterialTheme.typography.bodyMedium)
-                Switch(
-                    checked = perBookTypography,
-                    onCheckedChange = null, // 点击由 Row 的 toggleable 统一处理，避免双重回调
+                    selected = typography.textAlign,
+                    onSelect = onTextAlign,
+                )
+
+                // 字体（TYPE-01 + TYPE-05 预置霞鹜文楷；SAF 运行时导入在 Readium 3.3 无工程通道，推后）
+                OptionGroup(
+                    label = stringResource(R.string.typography_font),
+                    options = listOf(
+                        null to stringResource(R.string.typography_font_default),
+                        "serif" to stringResource(R.string.typography_font_serif),
+                        "sans-serif" to stringResource(R.string.typography_font_sans),
+                        ReaderTypography.LXGW_FONT_FAMILY to stringResource(R.string.typography_font_lxgw),
+                    ),
+                    selected = typography.fontFamily,
+                    onSelect = onFontFamily,
+                )
+
+                // 主题（TYPE-02，含跟随系统；EPUB 正文重排主题，PDF 位图反色推后）
+                OptionGroup(
+                    label = stringResource(R.string.typography_theme),
+                    options = listOf(
+                        ReaderTheme.SYSTEM to stringResource(R.string.common_follow_system),
+                        ReaderTheme.LIGHT to stringResource(R.string.typography_theme_light),
+                        ReaderTheme.SEPIA to stringResource(R.string.typography_theme_sepia),
+                        ReaderTheme.DARK to stringResource(R.string.typography_theme_dark),
+                    ),
+                    selected = typography.theme,
+                    onSelect = onTheme,
                 )
             }
-            if (hasBookOverride) {
-                TextButton(
-                    onClick = onResetBookTypography,
-                    modifier = Modifier.padding(start = 12.dp),
-                ) { Text(stringResource(R.string.typography_reset_book)) }
+
+            // 翻页方式（READ-04：分页 / 纵向滚动；PDF 经 scrollAxis 同样支持，CBZ 不支持）
+            if (canSwitchPagingMode) {
+                OptionGroup(
+                    label = stringResource(R.string.typography_paging),
+                    options = listOf(
+                        ReaderScrollMode.PAGINATED to stringResource(R.string.typography_paging_paginated),
+                        ReaderScrollMode.SCROLL to stringResource(R.string.typography_paging_scroll),
+                    ),
+                    // null = 分页（引擎默认），UI 显示 PAGINATED 选中。
+                    selected = typography.scroll ?: ReaderScrollMode.PAGINATED,
+                    onSelect = onScrollMode,
+                )
             }
-
-            TypographySlider(
-                label = stringResource(R.string.typography_font_size),
-                value = typography.fontSize ?: 1.0,
-                range = 0.5..5.0,
-                valueText = { "${(it * 100).toInt()}%" },
-                onChange = onFontSize,
-            )
-            // 字重（TYPE-01 欠账，TYPE-05 补）：Readium 归一化 0.75–1.75，1.0=常规；null 显示 1.0。
-            TypographySlider(
-                label = stringResource(R.string.typography_font_weight),
-                value = typography.fontWeight ?: 1.0,
-                range = 0.75..1.75,
-                valueText = { "%.2f".format(it) },
-                onChange = onFontWeight,
-            )
-            TypographySlider(
-                label = stringResource(R.string.typography_line_height),
-                value = typography.lineHeight ?: 1.0,
-                range = 1.0..3.0,
-                valueText = { "%.2f×".format(it) },
-                onChange = onLineHeight,
-            )
-            TypographySlider(
-                label = stringResource(R.string.typography_paragraph_spacing),
-                value = typography.paragraphSpacing ?: 0.0,
-                range = 0.0..3.0,
-                valueText = { "%.1f em".format(it) },
-                onChange = onParagraphSpacing,
-            )
-            TypographySlider(
-                label = stringResource(R.string.typography_page_margins),
-                value = typography.pageMargins ?: 1.0,
-                range = 0.5..4.0,
-                valueText = { "%.1f×".format(it) },
-                onChange = onPageMargins,
-            )
-
-            // 对齐（TYPE-01）
-            OptionGroup(
-                label = stringResource(R.string.typography_align),
-                options = listOf(
-                    ReaderTextAlign.JUSTIFY to stringResource(R.string.typography_align_justify),
-                    ReaderTextAlign.START to stringResource(R.string.typography_align_start),
-                ),
-                selected = typography.textAlign,
-                onSelect = onTextAlign,
-            )
-
-            // 字体（TYPE-01 + TYPE-05 预置霞鹜文楷；SAF 运行时导入在 Readium 3.3 无工程通道，推后）
-            OptionGroup(
-                label = stringResource(R.string.typography_font),
-                options = listOf(
-                    null to stringResource(R.string.typography_font_default),
-                    "serif" to stringResource(R.string.typography_font_serif),
-                    "sans-serif" to stringResource(R.string.typography_font_sans),
-                    ReaderTypography.LXGW_FONT_FAMILY to stringResource(R.string.typography_font_lxgw),
-                ),
-                selected = typography.fontFamily,
-                onSelect = onFontFamily,
-            )
-
-            // 翻页方式（READ-04：分页 / 纵向滚动）
-            OptionGroup(
-                label = stringResource(R.string.typography_paging),
-                options = listOf(
-                    ReaderScrollMode.PAGINATED to stringResource(R.string.typography_paging_paginated),
-                    ReaderScrollMode.SCROLL to stringResource(R.string.typography_paging_scroll),
-                ),
-                // null = 分页（引擎默认），UI 显示 PAGINATED 选中。
-                selected = typography.scroll ?: ReaderScrollMode.PAGINATED,
-                onSelect = onScrollMode,
-            )
 
             // 音量键翻页开关（READ-03：app 层 Fragment 拦截 KeyEvent，不传 Readium 引擎）。
             // SET-02：Row 用 toggleable 合并 label+switch 为一个语义节点（TalkBack 读「音量键翻页，开关，开/关」）。
@@ -1276,19 +1307,6 @@ private fun TypographySheet(
                     onCheckedChange = null, // 点击由 Row 的 toggleable 统一处理，避免双重回调
                 )
             }
-
-            // 主题（TYPE-02，含跟随系统）
-            OptionGroup(
-                label = stringResource(R.string.typography_theme),
-                options = listOf(
-                    ReaderTheme.SYSTEM to stringResource(R.string.common_follow_system),
-                    ReaderTheme.LIGHT to stringResource(R.string.typography_theme_light),
-                    ReaderTheme.SEPIA to stringResource(R.string.typography_theme_sepia),
-                    ReaderTheme.DARK to stringResource(R.string.typography_theme_dark),
-                ),
-                selected = typography.theme,
-                onSelect = onTheme,
-            )
 
             // ===== 显示设置（TYPE-03：亮度 / 常亮 / 方向，Window 层副作用）=====
 
