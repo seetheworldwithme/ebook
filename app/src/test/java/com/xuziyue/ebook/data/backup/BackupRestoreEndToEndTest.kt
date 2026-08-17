@@ -52,12 +52,14 @@ class BackupRestoreEndToEndTest {
             db.bookDao(), db.readingProgressDao(), db.bookmarkDao(),
             db.annotationDao(), db.readingSessionDao(),
             db.collectionDao(), db.collectionBookDao(),
+            db.bookTypographyDao(),
             dataStore, ctx,
         )
         restoreUseCase = RestoreUseCase(
             db.bookDao(), db.readingProgressDao(), db.bookmarkDao(),
             db.annotationDao(), db.readingSessionDao(),
             db.collectionDao(), db.collectionBookDao(),
+            db.bookTypographyDao(),
             dataStore, ctx,
         )
     }

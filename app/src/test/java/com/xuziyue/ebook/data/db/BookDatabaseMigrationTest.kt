@@ -25,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
  * - v2→v3（MIGRATION_2_3，加 reading_sessions）。
  * - v3→v4（MIGRATION_3_4，加 collections/collection_books + 系统书架）。
  * - v4→v5（MIGRATION_4_5，加 import_sources）。
+ * - v5→v6（MIGRATION_5_6，加 book_typography，TYPE-05 按书排版）。
  *
  * 做法（Robolectric JVM，CI 友好）：
  * 1. 用裸 [SQLiteDatabase] 造一份旧版库并种数据，置对应 user_version；
@@ -68,7 +69,7 @@ class BookDatabaseMigrationTest {
 
         // 2. Room 打开（触发迁移 + schema 校验）。起点 v1 文件，当前 Room 期望 v4，故需完整迁移链 1→2→3→4。
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
 
@@ -126,7 +127,7 @@ class BookDatabaseMigrationTest {
 
         // 2. Room 打开（触发迁移 + schema 校验）。起点 v2，当前期望 v4，需迁移链 2→3→4。
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
 
@@ -173,7 +174,7 @@ class BookDatabaseMigrationTest {
 
         // 2. Room 打开（触发 v3→v4 迁移 + schema 校验；完整迁移链 3→4）
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
 
@@ -233,7 +234,7 @@ class BookDatabaseMigrationTest {
 
         // 2. Room 打开（触发 v4→v5 迁移 + schema 校验）
         val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .allowMainThreadQueries()
             .build()
 
@@ -256,6 +257,60 @@ class BookDatabaseMigrationTest {
         // 6. FK CASCADE：删书连带清 import_sources 记录
         db.bookDao().deleteById("b5")
         assertTrue(db.importSourceDao().snapshotAll().isEmpty())
+
+        db.close()
+    }
+
+    @Test
+    fun `v5 升 v6 不丢数据且建出 book_typography 表且 CASCADE 生效`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.cacheDir, "migration-v6-test.db").also { it.delete() }
+        dbFile = file
+
+        // 1. 造 v5 库（八表）并种数据
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            db.execSQL(V1_BOOKS_SQL)
+            db.execSQL(V1_BOOKS_CONTENTHASH_INDEX_SQL)
+            db.execSQL(V1_READING_PROGRESS_SQL)
+            db.execSQL(V2_BOOKMARKS_SQL)
+            db.execSQL(V2_BOOKMARKS_INDEX_SQL)
+            db.execSQL(V2_ANNOTATIONS_SQL)
+            db.execSQL(V2_ANNOTATIONS_INDEX_SQL)
+            db.execSQL(V3_SESSIONS_SQL)
+            db.execSQL(V3_SESSIONS_INDEX_SQL)
+            db.execSQL(V4_COLLECTIONS_SQL)
+            db.execSQL(V4_COLLECTIONS_INDEX_SQL)
+            db.execSQL(V4_COLLECTION_BOOKS_SQL)
+            db.execSQL(V4_COLLECTION_BOOKS_COLLECTIONID_INDEX_SQL)
+            db.execSQL(V4_COLLECTION_BOOKS_BOOKID_INDEX_SQL)
+            db.execSQL(V5_IMPORT_SOURCES_SQL)
+            db.execSQL(V5_IMPORT_SOURCES_SOURCEURI_INDEX_SQL)
+            db.execSQL(V5_IMPORT_SOURCES_BOOKID_INDEX_SQL)
+            db.execSQL(
+                "INSERT INTO books(id,contentHash,title,authors,description,language,format,mediaType,filePath,fileSize,coverPath,importedAt,lastOpenedAt,status) " +
+                    "VALUES('b6','h6','按书排版测试书','[]',NULL,NULL,'EPUB','application/epub+zip','/b6.epub',0,NULL,0,NULL,'UNREAD')",
+            )
+            db.version = 5
+        }
+
+        // 2. Room 打开（触发 v5→v6 迁移 + schema 校验）
+        val db = Room.databaseBuilder(context, BookDatabase::class.java, file.absolutePath)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .allowMainThreadQueries()
+            .build()
+
+        // 3. 旧数据未丢
+        assertEquals("按书排版测试书", db.bookDao().getById("b6")?.title)
+
+        // 4. 新表 book_typography 可写读 + upsert 覆盖（PK=bookId）
+        db.bookTypographyDao().upsert(BookTypographyEntity("b6", "{\"schemaVersion\":1}", 1000L))
+        db.bookTypographyDao().upsert(BookTypographyEntity("b6", "{\"schemaVersion\":1,\"fontSize\":1.5}", 2000L))
+        assertEquals(1, db.bookTypographyDao().snapshotAll().size)
+        assertEquals(2000L, db.bookTypographyDao().get("b6")?.updatedAt)
+
+        // 5. FK CASCADE：删书连带删按书排版覆盖
+        db.bookDao().deleteById("b6")
+        assertTrue(db.bookTypographyDao().snapshotAll().isEmpty())
 
         db.close()
     }
@@ -325,5 +380,18 @@ class BookDatabaseMigrationTest {
 
         const val V4_COLLECTION_BOOKS_BOOKID_INDEX_SQL =
             "CREATE INDEX IF NOT EXISTS `index_collection_books_bookId` ON `collection_books` (`bookId`)"
+
+        // v5 schema 的 import_sources（取自 app/schemas/.../5.json，v5 已冻结，逐字硬编码）。
+        const val V5_IMPORT_SOURCES_SQL =
+            "CREATE TABLE IF NOT EXISTS `import_sources` (`id` TEXT NOT NULL, `sourceUri` TEXT NOT NULL, " +
+                "`bookId` TEXT NOT NULL, `fileSize` INTEGER NOT NULL, `lastModified` INTEGER NOT NULL, " +
+                "`scannedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+                "FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)"
+
+        const val V5_IMPORT_SOURCES_SOURCEURI_INDEX_SQL =
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_import_sources_sourceUri` ON `import_sources` (`sourceUri`)"
+
+        const val V5_IMPORT_SOURCES_BOOKID_INDEX_SQL =
+            "CREATE INDEX IF NOT EXISTS `index_import_sources_bookId` ON `import_sources` (`bookId`)"
     }
 }

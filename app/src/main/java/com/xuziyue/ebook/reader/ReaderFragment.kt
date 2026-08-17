@@ -23,12 +23,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.xuziyue.ebook.R
+import com.xuziyue.ebook.model.ReaderTypography
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
+import org.readium.r2.navigator.preferences.FontFamily
 import org.readium.r2.shared.ExperimentalReadiumApi
 import org.readium.r2.shared.publication.services.locateProgression
 import timber.log.Timber
@@ -293,6 +295,16 @@ class ReaderFragment : Fragment() {
     @OptIn(ExperimentalReadiumApi::class)
     private fun navigatorConfiguration() = EpubNavigatorFragment.Configuration {
         selectionActionModeCallback = this@ReaderFragment.selectionActionModeCallback
+        // TYPE-05：预置字体经 WebViewServer（https://readium/assets/）服务给 EPUB WebView，
+        // 只白名单放行 fonts/ 前缀（红线 #4 最小开放面；Readium 自己再并入 readium/.*）。
+        servedAssets += "fonts/.*"
+        // 霞鹜文楷屏幕阅读版（OFL-1.1）：声明 @font-face，字体选项在 TypographySheet 可选。
+        // 家族名必须与 TTF name 表一致（见 ReaderTypography.LXGW_FONT_FAMILY），否则 CSS 匹配不上字回退默认。
+        addFontFamilyDeclaration(FontFamily(ReaderTypography.LXGW_FONT_FAMILY)) {
+            addFontFace {
+                addSource("fonts/LXGWWenKaiScreen-Regular.ttf")
+            }
+        }
     }
 
     /**

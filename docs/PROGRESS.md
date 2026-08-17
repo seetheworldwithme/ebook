@@ -19,11 +19,11 @@
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
 | P0（MVP 必做） | 28 | 27 | 1 |
-| P1（首个增强版） | 11 | 6 | 0 |
+| P1（首个增强版） | 11 | 6 | 1 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 33 | 1 |
+| 合计 | 42 | 33 | 2 |
 
-> 当前进度：33 ✅ / 1 🚧（仅剩 SET-02 TalkBack 手指项；IMP-06 真机回归全过转 ✅）。详见文末变更记录。
+> 当前进度：33 ✅ / 2 🚧（SET-02 TalkBack 手指项 + TYPE-05 待真机回归）。详见文末变更记录。
 
 ---
 
@@ -83,6 +83,7 @@
 | TYPE-02 | ✅ | 日间、米黄、夜间主题与跟随系统（夜间无白屏闪烁）。刀2-A：真机回归夜间实时+杀重启保位 + 跟随系统（系统暗色切换正文跟随）+ 夜间无白屏闪烁均通过 |
 | TYPE-03 | ✅ | 屏幕亮度、常亮、方向设置。刀 TYPE-03/IMP-02/05：独立 ReaderDisplaySettings（:core:model，与排版分离）+ ReaderDisplaySettingsRepository（复用同一 DataStore）+ ReaderViewModel displaySettings StateFlow + 3 setter → ReaderScreen LaunchedEffect/DisposableEffect apply 到 Window（亮度 screenBrightness / 常亮 FLAG_KEEP_SCREEN_ON / 方向 requestedOrientation）+ 退出 DisposableEffect 恢复系统 + TypographySheet「显示」区（亮度 Slider + 常亮 Switch + 方向 OptionGroup）；Manifest 加 configChanges 抑制方向锁重建。真机（vivo V2329A）全过：亮度 Slider 实时变化 + 常亮开关阅读不灭屏 + 方向锁竖屏（系统横屏下保持 ROTATION_0 + PID 不变不重建）+ 退出恢复跟随系统（ROTATION_90）+ 杀重启三项保位（亮度 50% + 竖屏锁定跨重启保留） |
 | TYPE-04 | ✅ | 正确显示中文、日文、RTL、竖排、ruby 注音（建回归样本集）。合刀：建 `samples/public/typography/`（ruby/rtl/vertical 三 EPUB，Python 生成器 `scripts/gen_typography_fixtures.py`）+ JVM 结构校验 `TypographySamplesTest`（4）+ 仪器开书冒烟 `TypographySamplesOpenTest`（连机跑）+ README 真机肉眼清单。结论：EPUB ruby/RTL/竖排透传 ReadiumCSS 渲染、应用无需改；TXT 无 ruby。**真机视觉回归全过**（vivo：ruby 注音在汉字上方 / rtl 从右向左 / vertical 竖排列从右向左，均无乱码，adb 截图+视觉分析核对） |
+| TYPE-05 | 🚧 | 自定义字体导入、按书保存排版偏好。V1 一刀（2026-08-17，徐先生拍板口径：**预置开源中文字体**——SAF 运行时导入在 Readium 3.3 无工程通道（WebViewServer 只服务 APK assets，运行时字体需 JS 逐章 base64 或 INTERNET 权限，前者体验差后者违 SET-04），推后等上游支持）：①霞鹜文楷屏幕阅读版 v1.522（OFL-1.1，24.5MB）打包 `assets/fonts/`，`servedAssets += "fonts/.*"` + `addFontFamilyDeclaration("LXGW WenKai Screen")`，排版面板字体组加「霞鹜文楷」；LicenseData 补 OFL_1_1 族 + ofl-1.1.txt 全文；②字重 Slider 补 TYPE-01 欠账（0.75–1.75 归一化）；③按书排版：Room v5→v6 加 `book_typography`（bookId PK CASCADE + overridesJson partial override 只存显式改过字段）+ `mergeTypography` 合并纯函数（覆盖压全局、未动字段跟全局）+ 排版面板「仅本书生效」Switch（开=当前生效排版快照落覆盖行）/「恢复全局默认」（删行）；备份 backup.json 加 bookTypography 表。293 单测 + lint 全绿。**待真机回归转 ✅**：字体渲染生效 / 按书独立 / 恢复默认 / 重启保位 / v5→v6 迁移不丢数据 |
 
 ### 数据、导出与统计（DATA）
 
@@ -166,6 +167,12 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-17）：**TYPE-05 自定义字体 + 按书排版代码完成 ⬜→🚧（单测 293 + 编译 + lint 全绿，真机回归待做）。徐先生拍板口径：V1 预置开源中文字体，SAF 运行时导入推后（Readium 3.3 的字体机制只支持 APK assets——`WebViewServer` 只把 `https://readium/assets/` 映射到 APK assets，运行时导入的字体文件没有 URL 通道；替代路是 JS 逐章 base64 注入（中文大字体每章首屏闪退回）或加 INTERNET 起本地 server（违反 SET-04 零网络红线），均不可取）。**
+> **① 预置字体**：霞鹜文楷屏幕阅读版 v1.522（LXGW/LxgwWenKai-Screen，SIL OFL-1.1 允许再分发，24.5MB）打包 `assets/fonts/LXGWWenKaiScreen-Regular.ttf`；`EpubNavigatorFragment.Configuration` 加 `servedAssets += "fonts/.*"`（WebViewServer 白名单，最小开放面）+ `addFontFamilyDeclaration(FontFamily("LXGW WenKai Screen"))`（家族名必须与 TTF name 表一致，常量化在 `ReaderTypography.LXGW_FONT_FAMILY` 防 UI/声明两侧漂移）；排版面板字体组加「霞鹜文楷」选项。EPUB/TXT（转 EPUB）统一生效，ReadiumCss 注入 @font-face + preload link。「无效字体不导致书打不开」验收：字体编译期内置无用户输入面；fontFamily 是普通 CSS 字符串，坏值只触发浏览器字体回退不崩。LicenseData 补 `OFL_1_1` 枚举 + `legal/ofl-1.1.txt` 全文（取自上游仓库 OFL.txt，含霞鹜保留名条款）+ LicenseDataAuditTest 补 MUST_DISCLOSE。APK 增量 ≈ +24.5MB。
+> **② 字重 Slider（TYPE-01 欠账，PROGRESS 明确留 TYPE-05 一并）**：TypographySheet 字号下加字重 Slider（0.75–1.75，1.0=常规；Readium 归一化 0–2.5 只露常用段）+ `setFontWeight` setter，数据层/映射 TYPE-01 时已就绪。
+> **③ 按书排版（Room v5→v6，红线 #6）**：新表 `book_typography`（bookId PK→books.id CASCADE / overridesJson / updatedAt）+ `MIGRATION_5_6`（SQL 逐字取自 6.json）+ 迁移链 1→6（**踩坑复用**：旧迁移测试 addMigrations 没补 5_6 链导致 4 个用例报 `migration 1→6 not found`，全链补齐后过——与 v3→v4 那次同类）。**partial override 语义**（BookTypographyOverrides，org.json 手写沿用 PersistedLocator 先例）：只存本书显式改过的字段，`mergeTypography(global, override)` 纯函数合并——覆盖非 null 压全局、未动字段跟全局（全局改字号未覆盖字号的书一起变）；解析任何坏数据吞掉降级 Empty（验收「无效数据不挡书打开」）。「仅本书生效」Switch 开=当前生效排版**快照**落覆盖行（此后改动只写本书）；「恢复全局默认」=删行；`ReaderViewModel.typography` 改 combine(global, bookOverride) 派生，下游 preferences/Fragment 链路不变（单向数据流保持）；开关是会话内内存态（切书重置），覆盖行本身持久。备份：BackupDto 加 `bookTypography`（默认 emptyList 向后兼容）+ Restore 按 bookIdMap 重映射 upsert（SKIP 策略不动、孤儿跳过）。
+> **测试**：新增 BookTypographyOverridesTest 9（序列化往返/坏数据降级/合并语义/全局传导）+ BookTypographyDaoTest 6（Robolectric）+ BookTypographyRepositoryTest 5 + 迁移测试 v5→v6（JVM + 仪器 migrate5To6）+ 备份序列化含新表；合计 `:app:testDebugUnitTest` **293 passed** + `:core:model` + `:reader:readium` 回归 + lintDebug 全绿。**仅单测+编译+lint，未真机回归——TYPE-05 维持 🚧**。真机清单：字体渲染生效（对比默认字体）/ 切换实时 / 重启保位 / 按书开关独立两书互不影响 / 恢复全局默认 / 字重 slider 生效 / v5→v6 覆盖安装迁移不丢数据 / 删书清覆盖。
 
 > 实现状态（2026-08-17）：**IMP-06 目录授权 + 增量扫描真机回归（vivo V2329A）全过 🚧→✅。P1 进度 5✅→6✅，合计 33✅ / 1🚧（仅剩 SET-02 TalkBack 手指项）。** adb 客观验证 + 徐先生手指（SAF 授权弹窗）混合。
 > **真机验证明细**：① **v4→v5 迁移**——覆盖安装冷启动 `user_version 4→5` + books/progress/collections 不丢（1/1/2）+ `import_sources` 表结构与 5.json 逐字段一致（含 sourceUri 唯一索引）+ 零 FATAL；② **仪器迁移测试 `connectedDebugAndroidTest` 4/4 全过**（含 migrate4To5 真机 schema 精确校验）；③ **首扫**（徐先生手指授权 `Download/ebook-scan-test` 后点「立即扫描」）——报告 新增3/已在库0/跳过0/失败0，DB books=3 + import_sources=3 条（sourceUri=DocumentsContract document Uri、fileSize/lastModified 快照齐全）+ 书源文件按 contentHash 落 `files/books/`，**子目录 sub/ 里 cole FXL 递归导入**、`fake.pdf` 静默跳过不计失败；④ **二次扫描秒回**——新增0/跳过3/失败0，记录不重复（增量判定生效）；⑤ **mtime 变化检测**——adb touch 源 epub 后重扫 → 已在库1（重导→contentHash 去重命中 AlreadyExists 路径并刷新记录）+ books 仍 3 不重复入库；⑥ **删书 CASCADE + 重扫复活**——app 内长按删除 Alice（books 3→2、import_sources 3→2 记录被 FK 连带清）→ 重扫 新增1（Alice 复活，目录同步语义）；⑦ **冷启动自动扫描**——push 新 ruby.epub + force-stop 冷启 → 8s 内自动入库（3→4），logcat `IMP06 冷启动扫描完成：imported=1 exists=0 skipped=3 failed=0`（只记数量不记文件名，红线 #8）；⑧ **开关反向**——关自动扫描后冷启 + push 新书 → 不扫（books 不变、无 IMP06 日志），开关恢复开后再冷启 → rtl.epub 自动入库（4→5）；⑨ 全程（含迁移/扫描/删除/冷启）**零 FATAL**。

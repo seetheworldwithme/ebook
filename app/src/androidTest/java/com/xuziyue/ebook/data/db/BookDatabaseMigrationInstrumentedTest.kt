@@ -25,6 +25,7 @@ import org.junit.runner.RunWith
  * - migrate2To3：v2→v3（加 reading_sessions，DATA-04）。
  * - migrate3To4：v3→v4（加 collections/collection_books，LIB-05）。
  * - migrate4To5：v4→v5（加 import_sources，IMP-06）。
+ * - migrate5To6：v5→v6（加 book_typography，TYPE-05 按书排版）。
  *
  * 全程跑在真机真实 SQLite 上（比单测更强：真实数据 + 真实 SQLite + Room 运行时校验）。
  *
@@ -176,6 +177,39 @@ class BookDatabaseMigrationInstrumentedTest {
         db.close()
     }
 
+    @Test
+    fun migrate5To6_保数据_建bookTypography_schema与6json一致() {
+        // 1. 由 5.json 建真实 v5 库（八表）+ 灌 v5 种子（书）
+        helper.createDatabase(TEST_DB, 5).use { db -> seedV5Data(db) }
+
+        // 2. 跑 MIGRATION_5_6 并与 6.json 逐字段校验（核心：schema 精确匹配）
+        val db = helper.runMigrationsAndValidate(TEST_DB, 6, true, MIGRATION_5_6)
+
+        // 3. 旧数据未丢
+        assertEquals("按书排版测试书", string(db, "SELECT title FROM books WHERE id = ?", "b6"))
+
+        // 4. 新表 book_typography 已建且为空
+        assertEquals(0L, count(db, "book_typography"))
+
+        // 5. 新表可写 + PK 覆盖语义
+        db.execSQL(
+            "INSERT INTO book_typography(bookId,overridesJson,updatedAt) VALUES(?,?,?)",
+            arrayOf<Any?>("b6", "{\"schemaVersion\":1,\"fontSize\":1.5}", 1000L),
+        )
+        db.execSQL(
+            "INSERT OR REPLACE INTO book_typography(bookId,overridesJson,updatedAt) VALUES(?,?,?)",
+            arrayOf<Any?>("b6", "{\"schemaVersion\":1,\"theme\":\"DARK\"}", 2000L),
+        )
+        assertEquals(1L, count(db, "book_typography"))
+
+        // 6. FK CASCADE 在迁移后库仍生效（删书连带删按书排版覆盖）
+        db.execSQL("PRAGMA foreign_keys = ON")
+        db.execSQL("DELETE FROM books WHERE id = ?", arrayOf<Any?>("b6"))
+        assertEquals(0L, count(db, "book_typography"))
+
+        db.close()
+    }
+
     // ===== 种子 / 查询小工具 =====
 
     /** 灌 v1 种子：1 本书 + 1 条进度（列对齐 1.json / 当前 BookEntity，v2 未改这两张表）。 */
@@ -241,6 +275,19 @@ class BookDatabaseMigrationInstrumentedTest {
             arrayOf<Any?>(
                 "b5", "hash5", "目录导入测试书", "[\"作者\"]",
                 null, null, "EPUB", "application/epub+zip", "/b5.epub",
+                0L, null, 0L, null, "UNREAD",
+            ),
+        )
+    }
+
+    /** 灌 v5 种子：1 本书（列对齐 5.json；import_sources 留空，v6 未改此表）。 */
+    private fun seedV5Data(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "INSERT INTO books(id,contentHash,title,authors,description,language,format,mediaType,filePath,fileSize,coverPath,importedAt,lastOpenedAt,status) " +
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            arrayOf<Any?>(
+                "b6", "hash6", "按书排版测试书", "[\"作者\"]",
+                null, null, "EPUB", "application/epub+zip", "/b6.epub",
                 0L, null, 0L, null, "UNREAD",
             ),
         )

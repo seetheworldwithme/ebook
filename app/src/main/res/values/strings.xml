@@ -155,6 +155,7 @@
 
     <!-- 排版与显示（TYPE-01/02/03） -->
     <string name="typography_font_size">字号</string>
+    <string name="typography_font_weight">字重</string>
     <string name="typography_line_height">行高</string>
     <string name="typography_paragraph_spacing">段距</string>
     <string name="typography_page_margins">页边距</string>
@@ -165,6 +166,9 @@
     <string name="typography_font_default">默认</string>
     <string name="typography_font_serif">衬线</string>
     <string name="typography_font_sans">无衬线</string>
+    <string name="typography_font_lxgw">霞鹜文楷</string>
+    <string name="typography_per_book">仅本书生效</string>
+    <string name="typography_reset_book">恢复全局默认排版</string>
     <string name="typography_paging">翻页方式</string>
     <string name="typography_paging_paginated">分页</string>
     <string name="typography_paging_scroll">滚动</string>

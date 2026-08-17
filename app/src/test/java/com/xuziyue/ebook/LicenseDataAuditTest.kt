@@ -104,7 +104,7 @@ class LicenseDataAuditTest {
             "AndroidX DataStore", "AndroidX Fragment", "AndroidX Lifecycle",
             "AndroidX Navigation", "AndroidX WebKit", "AndroidX Core KTX",
             "Kotlin Coroutines", "Kotlinx Serialization", "Kotlinx Datetime",
-            "Timber", "desugar_jdk_libs",
+            "Timber", "desugar_jdk_libs", "LXGW WenKai Screen",
             // 实质性传递依赖（REL-07 审核新增）
             "jsoup", "Media3", "Guava", "Okio", "Accompanist", "PdfiumAndroid",
             "AndroidPdfViewer", "koi", "AppCompat",

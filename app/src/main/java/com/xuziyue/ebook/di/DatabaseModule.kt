@@ -20,8 +20,10 @@ import com.xuziyue.ebook.data.db.MIGRATION_1_2
 import com.xuziyue.ebook.data.db.MIGRATION_2_3
 import com.xuziyue.ebook.data.db.MIGRATION_3_4
 import com.xuziyue.ebook.data.db.MIGRATION_4_5
+import com.xuziyue.ebook.data.db.MIGRATION_5_6
 import com.xuziyue.ebook.data.db.AnnotationDao
 import com.xuziyue.ebook.data.db.BookmarkDao
+import com.xuziyue.ebook.data.db.BookTypographyDao
 import com.xuziyue.ebook.data.db.CollectionBookDao
 import com.xuziyue.ebook.data.db.CollectionDao
 import com.xuziyue.ebook.data.db.ImportSourceDao
@@ -48,7 +50,7 @@ object DatabaseModule {
     @Singleton
     fun provideBookDatabase(@ApplicationContext context: Context): BookDatabase =
         Room.databaseBuilder(context, BookDatabase::class.java, BookDatabase.DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5) // v1→…→v5（红线 #6，不破坏性重建）
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) // v1→…→v6（红线 #6，不破坏性重建）
             .build()
 
     @Provides
@@ -74,6 +76,15 @@ object DatabaseModule {
 
     @Provides
     fun provideImportSourceDao(db: BookDatabase): ImportSourceDao = db.importSourceDao()
+
+    @Provides
+    fun provideBookTypographyDao(db: BookDatabase): BookTypographyDao = db.bookTypographyDao()
+
+    /** 按书排版覆盖仓库（TYPE-05）。 */
+    @Provides
+    @Singleton
+    fun provideBookTypographyRepository(dao: BookTypographyDao): com.xuziyue.ebook.data.BookTypographyRepository =
+        com.xuziyue.ebook.data.BookTypographyRepository(dao)
 
     @Provides
     @Singleton
@@ -161,11 +172,12 @@ object DatabaseModule {
         sessionDao: ReadingSessionDao,
         collectionDao: CollectionDao,
         collectionBookDao: CollectionBookDao,
+        bookTypographyDao: com.xuziyue.ebook.data.db.BookTypographyDao,
         dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
         @ApplicationContext context: Context,
     ): com.xuziyue.ebook.data.backup.BackupUseCase =
         com.xuziyue.ebook.data.backup.BackupUseCase(
-            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, dataStore, context,
+            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, bookTypographyDao, dataStore, context,
         )
 
     @Provides
@@ -178,10 +190,11 @@ object DatabaseModule {
         sessionDao: ReadingSessionDao,
         collectionDao: CollectionDao,
         collectionBookDao: CollectionBookDao,
+        bookTypographyDao: com.xuziyue.ebook.data.db.BookTypographyDao,
         dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
         @ApplicationContext context: Context,
     ): com.xuziyue.ebook.data.backup.RestoreUseCase =
         com.xuziyue.ebook.data.backup.RestoreUseCase(
-            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, dataStore, context,
+            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, bookTypographyDao, dataStore, context,
         )
 }

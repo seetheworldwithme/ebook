@@ -33,6 +33,7 @@ data class BackupDto(
     val readingSessions: List<SessionRow>,
     val collections: List<CollectionRow> = emptyList(),
     val collectionBooks: List<CollectionBookRow> = emptyList(),
+    val bookTypography: List<BookTypographyRow> = emptyList(),
     val settings: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -108,6 +109,14 @@ data class CollectionBookRow(
     val collectionId: String,
     val bookId: String,
     val addedAt: Long,
+)
+
+/** TYPE-05 按书排版覆盖行（overridesJson 原样存 raw 字符串，同 locatorJson 口径）。 */
+@Serializable
+data class BookTypographyRow(
+    val bookId: String,
+    val overridesJson: String,
+    val updatedAt: Long,
 )
 
 /** 备份文件结构版本（独立于数据库 migration 版本与 PersistedLocator schema 版本）。 */

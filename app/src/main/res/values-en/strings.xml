@@ -155,6 +155,7 @@
 
     <!-- Typography & display (TYPE-01/02/03) -->
     <string name="typography_font_size">Font size</string>
+    <string name="typography_font_weight">Font weight</string>
     <string name="typography_line_height">Line height</string>
     <string name="typography_paragraph_spacing">Paragraph spacing</string>
     <string name="typography_page_margins">Page margins</string>
@@ -165,6 +166,9 @@
     <string name="typography_font_default">Default</string>
     <string name="typography_font_serif">Serif</string>
     <string name="typography_font_sans">Sans-serif</string>
+    <string name="typography_font_lxgw">LXGW WenKai</string>
+    <string name="typography_per_book">This book only</string>
+    <string name="typography_reset_book">Reset to global default</string>
     <string name="typography_paging">Paging</string>
     <string name="typography_paging_paginated">Paginated</string>
     <string name="typography_paging_scroll">Scroll</string>

@@ -9,11 +9,14 @@ import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.AnnotationRepository
 import com.xuziyue.ebook.data.BookRepository
 import com.xuziyue.ebook.data.BookmarkRepository
+import com.xuziyue.ebook.data.BookTypographyOverrides
+import com.xuziyue.ebook.data.BookTypographyRepository
 import com.xuziyue.ebook.data.ReaderDisplaySettingsRepository
 import com.xuziyue.ebook.data.ReaderTypographyRepository
 import com.xuziyue.ebook.data.ReadingProgressRepository
 import com.xuziyue.ebook.data.ReadingSessionRepository
 import com.xuziyue.ebook.data.export.ExportBookDataUseCase
+import com.xuziyue.ebook.data.mergeTypography
 import com.xuziyue.ebook.model.HighlightColor
 import com.xuziyue.ebook.model.ReaderCapabilities
 import com.xuziyue.ebook.model.ReaderDisplaySettings
@@ -86,6 +89,7 @@ class ReaderViewModel @Inject constructor(
     private val bookRepository: BookRepository,
     private val progressRepository: ReadingProgressRepository,
     private val typographyRepository: ReaderTypographyRepository,
+    private val bookTypographyRepository: BookTypographyRepository,
     private val displaySettingsRepository: ReaderDisplaySettingsRepository,
     private val bookmarkRepository: BookmarkRepository,
     private val annotationRepository: AnnotationRepository,
@@ -97,11 +101,40 @@ class ReaderViewModel @Inject constructor(
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     /**
-     * 引擎无关排版偏好（持久化驱动）。Default 初值避免首次空窗；Repository emit 后自动更新。
+     * 全局排版偏好（TYPE-01/02，持久化驱动）。Default 初值避免首次空窗；Repository emit 后自动更新。
+     *
+     * 注意：UI / Fragment 消费的是合并后的 [typography]（TYPE-05：全局 + 本书覆盖），
+     * 本 flow 只作合并输入，不直接暴露给排版面板。
      */
-    val typography: StateFlow<ReaderTypography> =
+    private val globalTypography: StateFlow<ReaderTypography> =
         typographyRepository.observe()
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default)
+
+    /** 当前打开的书 id（Flow 源，供 bookmarks/annotations/bookOverride flatMapLatest 切书时重订阅）。 */
+    private val _activeBookId = MutableStateFlow<String?>(null)
+
+    /**
+     * 本书排版覆盖（TYPE-05，DB 驱动回流；无覆盖行 = Empty，全跟全局）。
+     */
+    private val bookOverride: StateFlow<BookTypographyOverrides> = _activeBookId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(BookTypographyOverrides.Empty)
+            else bookTypographyRepository.observe(id)
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, BookTypographyOverrides.Empty)
+
+    /**
+     * 本书生效排版（TYPE-05）：全局偏好经本书覆盖合并（覆盖非 null 字段压全局）。
+     * 切书时 flatMapLatest 重订阅，合并结果自动切到新书的覆盖。
+     */
+    val typography: StateFlow<ReaderTypography> = combine(globalTypography, bookOverride) { g, o ->
+        mergeTypography(g, o.values)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default)
+
+    /** 本书是否有覆盖行（排版面板「恢复全局默认」按钮显示态；快照全默认值也视为有覆盖）。 */
+    val hasBookOverride: StateFlow<Boolean> = bookOverride
+        .map { it.values != BookTypographyOverrides.Empty.values }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** READ-03：音量键翻页开关（派生自 typography；Fragment collect 后决定是否拦截音量键）。 */
     val volumeKeyPaging: StateFlow<Boolean> = typography
@@ -131,8 +164,6 @@ class ReaderViewModel @Inject constructor(
         combine(typography, _systemDark, _systemFontScale) { t, dark, scale -> t.toEpubPreferences(dark, scale) }
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderTypography.Default.toEpubPreferences(isSystemDark = false))
 
-    /** 当前打开的书 id（Flow 源，供 bookmarks/annotations flatMapLatest 切书时重订阅）。 */
-    private val _activeBookId = MutableStateFlow<String?>(null)
     /** 最近 Locator（Flow 源，供 isBookmarked 响应式判定；[latestLocator] 取值直读 .value）。 */
     private val _latestLocator = MutableStateFlow<Locator?>(null)
 
@@ -244,10 +275,11 @@ class ReaderViewModel @Inject constructor(
         (_uiState.value as? ReaderUiState.Ready)?.publication?.close()
         // 必须同步进入 Loading：ReaderFragment.onCreate 紧接着会选择恢复 factory，不能再看到旧 Ready。
         _uiState.value = ReaderUiState.Loading
-        _activeBookId.value = bookId // 驱动 bookmarks/annotations 重新订阅新书
+        _activeBookId.value = bookId // 驱动 bookmarks/annotations/bookOverride 重新订阅新书
         _latestLocator.value = null
         _progressText.value = "0%"
         _progression.value = 0.0
+        _perBookTypography.value = false // TYPE-05：按书开关是会话内状态，切书重置（重开书按已有覆盖行显示）
         openPublication(bookId)
     }
 
@@ -410,6 +442,9 @@ class ReaderViewModel @Inject constructor(
     fun setFontSize(value: Double) = updateTypography {
         it.copy(fontSize = value.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX))
     }
+    fun setFontWeight(value: Double) = updateTypography {
+        it.copy(fontWeight = value.coerceIn(FONT_WEIGHT_MIN, FONT_WEIGHT_MAX))
+    }
     fun setLineHeight(value: Double) = updateTypography {
         it.copy(lineHeight = value.coerceIn(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX))
     }
@@ -435,9 +470,53 @@ class ReaderViewModel @Inject constructor(
     /**
      * 写入持久化层；observe 自动回流 → [typography]/[preferences] 更新 → Fragment submitPreferences。
      * 单向数据流（不乐观更新内存），避免快速连点时内存与 DataStore 竞态回退。
+     *
+     * TYPE-05：[perBookTypography] 开时写入本书覆盖（BookTypographyRepository），
+     * 关时写全局（ReaderTypographyRepository）——面板同一组 setter，路由由开关决定。
      */
     private fun updateTypography(transform: (ReaderTypography) -> ReaderTypography) {
-        viewModelScope.launch { typographyRepository.update(transform) }
+        val bookId = currentBookId
+        if (bookId != null && perBookTypography.value) {
+            viewModelScope.launch {
+                bookTypographyRepository.update(bookId) { overrides ->
+                    overrides.copy(values = transform(overrides.values))
+                }
+            }
+        } else {
+            viewModelScope.launch { typographyRepository.update(transform) }
+        }
+    }
+
+    // ===== 按书排版开关（TYPE-05）=====
+
+    /** 排版改动是否只写本书（内存标志 + 持久化到本书覆盖行由首个 setter 落盘）。 */
+    private val _perBookTypography = MutableStateFlow(false)
+    val perBookTypography: StateFlow<Boolean> = _perBookTypography.asStateFlow()
+
+    /**
+     * 开「仅本书生效」：把**当前生效排版的快照**作为本书覆盖的起点。
+     * 快照语义（非空覆盖）：此后本书改动只影响本书；全局改其它字段不影响本书（已全部覆盖）。
+     * 这与 partial override 的「未动字段跟全局」在开关打开瞬间收敛为一致行为，避免
+     * 「开了开关但只有部分字段覆盖、全局又变」的混乱中间态。
+     */
+    fun enablePerBookTypography() {
+        val bookId = currentBookId ?: return
+        val snapshot = typography.value
+        _perBookTypography.value = true
+        viewModelScope.launch {
+            bookTypographyRepository.update(bookId) { it.copy(values = snapshot) }
+        }
+    }
+
+    /** 关「仅本书生效」：后续改动回写全局；已落盘的本书覆盖保留（重开书仍生效）但不追加。 */
+    fun disablePerBookTypography() {
+        _perBookTypography.value = false
+    }
+
+    /** 「恢复全局默认」（TYPE-05 验收）：删本书覆盖行，本书立即回到纯全局排版。 */
+    fun resetBookTypography() {
+        val bookId = currentBookId ?: return
+        viewModelScope.launch { bookTypographyRepository.clear(bookId) }
     }
 
     // ===== 显示/环境设置（TYPE-03 亮度/常亮/方向，Window 层副作用，不传给 Readium 引擎）=====
@@ -702,6 +781,9 @@ class ReaderViewModel @Inject constructor(
         // 排版数值范围（UI 滑块同此；null = 引擎默认，coerce 仅约束显式设置的值）。
         const val FONT_SIZE_MIN = 0.5
         const val FONT_SIZE_MAX = 5.0
+        // 字重（TYPE-05 补 TYPE-01 欠账）：Readium 归一化 0.0–2.5（非 CSS 100–900），UI 只露常用段。
+        const val FONT_WEIGHT_MIN = 0.75
+        const val FONT_WEIGHT_MAX = 1.75
         const val LINE_HEIGHT_MIN = 1.0
         const val LINE_HEIGHT_MAX = 3.0
         const val PAGE_MARGINS_MIN = 0.5

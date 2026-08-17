@@ -13,6 +13,8 @@ import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookEntity
 import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.BookmarkEntity
+import com.xuziyue.ebook.data.db.BookTypographyDao
+import com.xuziyue.ebook.data.db.BookTypographyEntity
 import com.xuziyue.ebook.data.db.CollectionBookDao
 import com.xuziyue.ebook.data.db.CollectionBookEntity
 import com.xuziyue.ebook.data.db.CollectionDao
@@ -56,6 +58,7 @@ class RestoreUseCase(
     private val sessionDao: ReadingSessionDao,
     private val collectionDao: CollectionDao,
     private val collectionBookDao: CollectionBookDao,
+    private val bookTypographyDao: BookTypographyDao,
     private val dataStore: DataStore<Preferences>,
     @ApplicationContext private val context: Context,
 ) {
@@ -213,6 +216,20 @@ class RestoreUseCase(
 
         // 书架 / 关系恢复（LIB-05）：collections 直接 upsert（系统书架确保存在），关系按 bookIdMap 重映射。
         restoreCollections(dto, bookIdMap)
+
+        // 按书排版恢复（TYPE-05）：SKIP 策略不动本地，其余按 bookIdMap 重映射后 upsert（孤儿跳过）。
+        if (strategy != Strategy.SKIP_CONFLICTS) {
+            dto.bookTypography.forEach { row ->
+                val targetBookId = bookIdMap[row.bookId] ?: return@forEach // 书被跳过，覆盖不留孤儿
+                bookTypographyDao.upsert(
+                    BookTypographyEntity(
+                        bookId = targetBookId,
+                        overridesJson = row.overridesJson,
+                        updatedAt = row.updatedAt,
+                    ),
+                )
+            }
+        }
 
         // 2. settings 覆盖（SKIP 策略不动设置；其余覆盖）
         if (strategy != Strategy.SKIP_CONFLICTS) {

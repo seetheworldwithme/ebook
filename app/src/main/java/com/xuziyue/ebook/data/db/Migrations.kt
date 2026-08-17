@@ -10,7 +10,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * [MIGRATION_2_3]：v2 → v3 加 reading_sessions（DATA-04 阅读时长）。
  * [MIGRATION_3_4]：v3 → v4 加 collections + collection_books（LIB-05 书架/标签/收藏）+ 插入系统书架「收藏」。
  * [MIGRATION_4_5]：v4 → v5 加 import_sources（IMP-06 目录增量扫描来源映射）。
- * CREATE TABLE / INDEX 的 SQL 逐字取自 Room 生成的 `app/schemas/.../{2,3,4,5}.json`，保证列序 / 类型亲和 / 约束名与 Room 期望一致
+ * [MIGRATION_5_6]：v5 → v6 加 book_typography（TYPE-05 按书排版覆盖）。
+ * CREATE TABLE / INDEX 的 SQL 逐字取自 Room 生成的 `app/schemas/.../{2,...,6}.json`，保证列序 / 类型亲和 / 约束名与 Room 期望一致
  * （否则运行时抛 `Migration didn't properly handle`）。
  */
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -160,6 +161,28 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS `index_import_sources_bookId` ON `import_sources` (`bookId`)",
+        )
+    }
+}
+
+/**
+ * v5 → v6：加 book_typography 表（TYPE-05 按书排版覆盖）。
+ *
+ * CREATE TABLE 的 SQL 逐字取自 Room 生成的 `app/schemas/.../6.json`。
+ * 空表新增（无历史数据回填），FK 指向 books(id) CASCADE——app 内删书自动清覆盖。
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `book_typography` (
+                `bookId` TEXT NOT NULL,
+                `overridesJson` TEXT NOT NULL,
+                `updatedAt` INTEGER NOT NULL,
+                PRIMARY KEY(`bookId`),
+                FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
         )
     }
 }

@@ -44,6 +44,9 @@ class BackupDtoSerializationTest {
             readingSessions = listOf(
                 SessionRow("s1", "b1", 0L, 60000L, 60L),
             ),
+            bookTypography = listOf(
+                BookTypographyRow("b1", """{"schemaVersion":1,"fontSize":1.5}""", 9000L),
+            ),
             settings = mapOf(
                 "app_reading_stats_enabled" to JsonPrimitive(true),
                 "reader_font_size" to JsonPrimitive(1.3),
@@ -66,6 +69,9 @@ class BackupDtoSerializationTest {
         assertEquals("摘录", back.bookmarks[0].excerpt)
         assertEquals("笔记", back.annotations[0].note)
         assertEquals(60L, back.readingSessions[0].activeSeconds)
+        // 按书排版（TYPE-05）overridesJson 原样
+        assertEquals("""{"schemaVersion":1,"fontSize":1.5}""", back.bookTypography[0].overridesJson)
+        assertEquals(9000L, back.bookTypography[0].updatedAt)
         // settings
         assertEquals(true, (back.settings["app_reading_stats_enabled"] as JsonPrimitive).content.toBooleanStrict())
     }

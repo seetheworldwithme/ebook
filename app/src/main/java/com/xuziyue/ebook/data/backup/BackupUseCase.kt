@@ -11,6 +11,8 @@ import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookEntity
 import com.xuziyue.ebook.data.db.BookmarkDao
 import com.xuziyue.ebook.data.db.BookmarkEntity
+import com.xuziyue.ebook.data.db.BookTypographyDao
+import com.xuziyue.ebook.data.db.BookTypographyEntity
 import com.xuziyue.ebook.data.db.CollectionBookDao
 import com.xuziyue.ebook.data.db.CollectionBookEntity
 import com.xuziyue.ebook.data.db.CollectionDao
@@ -51,6 +53,7 @@ class BackupUseCase(
     private val sessionDao: ReadingSessionDao,
     private val collectionDao: CollectionDao,
     private val collectionBookDao: CollectionBookDao,
+    private val bookTypographyDao: BookTypographyDao,
     private val dataStore: DataStore<Preferences>,
     @ApplicationContext private val context: Context,
 ) {
@@ -73,6 +76,7 @@ class BackupUseCase(
         val sessions = sessionDao.snapshotAll()
         val collections = collectionDao.snapshotAll()
         val collectionBooks = collectionBookDao.snapshotAll()
+        val bookTypography = bookTypographyDao.snapshotAll()
 
         // 2. 构造 BackupDto + settings 快照
         val dto = BackupDto(
@@ -84,6 +88,7 @@ class BackupUseCase(
             readingSessions = sessions.map(::toRow),
             collections = collections.map(::toRow),
             collectionBooks = collectionBooks.map(::toRow),
+            bookTypography = bookTypography.map(::toRow),
             settings = snapshotSettings(),
         )
 
@@ -195,6 +200,10 @@ class BackupUseCase(
 
     private fun toRow(cb: CollectionBookEntity) = CollectionBookRow(
         collectionId = cb.collectionId, bookId = cb.bookId, addedAt = cb.addedAt,
+    )
+
+    private fun toRow(t: BookTypographyEntity) = BookTypographyRow(
+        bookId = t.bookId, overridesJson = t.overridesJson, updatedAt = t.updatedAt,
     )
 
     private companion object {

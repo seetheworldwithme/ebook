@@ -151,6 +151,8 @@ fun ReaderScreen(
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val typography by viewModel.typography.collectAsStateWithLifecycle()
     val displaySettings by viewModel.displaySettings.collectAsStateWithLifecycle()
+    val perBookTypography by viewModel.perBookTypography.collectAsStateWithLifecycle()
+    val hasBookOverride by viewModel.hasBookOverride.collectAsStateWithLifecycle()
     val isBookmarked by viewModel.isBookmarked.collectAsStateWithLifecycle()
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val annotations by viewModel.annotations.collectAsStateWithLifecycle()
@@ -344,8 +346,11 @@ fun ReaderScreen(
             TypographySheet(
                 typography = typography,
                 displaySettings = displaySettings,
+                perBookTypography = perBookTypography,
+                hasBookOverride = hasBookOverride,
                 onDismiss = { showTypography = false },
                 onFontSize = { viewModel.setFontSize(it) },
+                onFontWeight = { viewModel.setFontWeight(it) },
                 onLineHeight = { viewModel.setLineHeight(it) },
                 onParagraphSpacing = { viewModel.setParagraphSpacing(it) },
                 onPageMargins = { viewModel.setPageMargins(it) },
@@ -354,6 +359,9 @@ fun ReaderScreen(
                 onFontFamily = { viewModel.setFontFamily(it) },
                 onScrollMode = { viewModel.setScrollMode(it) },
                 onVolumeKeyPaging = { viewModel.setVolumeKeyPaging(it) },
+                onEnablePerBook = { viewModel.enablePerBookTypography() },
+                onDisablePerBook = { viewModel.disablePerBookTypography() },
+                onResetBookTypography = { viewModel.resetBookTypography() },
                 onBrightness = { viewModel.setBrightness(it) },
                 onKeepScreenOn = { viewModel.setKeepScreenOn(it) },
                 onOrientation = { viewModel.setOrientation(it) },
@@ -857,8 +865,11 @@ private fun SearchResultRow(item: SearchResultItem, onClick: () -> Unit) {
 private fun TypographySheet(
     typography: ReaderTypography,
     displaySettings: ReaderDisplaySettings,
+    perBookTypography: Boolean,
+    hasBookOverride: Boolean,
     onDismiss: () -> Unit,
     onFontSize: (Double) -> Unit,
+    onFontWeight: (Double) -> Unit,
     onLineHeight: (Double) -> Unit,
     onParagraphSpacing: (Double) -> Unit,
     onPageMargins: (Double) -> Unit,
@@ -867,6 +878,9 @@ private fun TypographySheet(
     onFontFamily: (String?) -> Unit,
     onScrollMode: (ReaderScrollMode) -> Unit,
     onVolumeKeyPaging: (Boolean) -> Unit,
+    onEnablePerBook: () -> Unit,
+    onDisablePerBook: () -> Unit,
+    onResetBookTypography: () -> Unit,
     onBrightness: (Float?) -> Unit,
     onKeepScreenOn: (Boolean) -> Unit,
     onOrientation: (ReaderOrientation?) -> Unit,
@@ -887,12 +901,49 @@ private fun TypographySheet(
                     .semantics { heading() },
             )
 
+            // 按书排版（TYPE-05）：开关「仅本书生效」+ 恢复全局默认。
+            // 开=把当前排版快照落成本书覆盖（此后改动只写本书）；恢复=删覆盖行回到纯全局。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp)
+                    .toggleable(
+                        value = perBookTypography,
+                        onValueChange = { enabled ->
+                            if (enabled) onEnablePerBook() else onDisablePerBook()
+                        },
+                        role = Role.Switch,
+                    ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.typography_per_book), style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = perBookTypography,
+                    onCheckedChange = null, // 点击由 Row 的 toggleable 统一处理，避免双重回调
+                )
+            }
+            if (hasBookOverride) {
+                TextButton(
+                    onClick = onResetBookTypography,
+                    modifier = Modifier.padding(start = 12.dp),
+                ) { Text(stringResource(R.string.typography_reset_book)) }
+            }
+
             TypographySlider(
                 label = stringResource(R.string.typography_font_size),
                 value = typography.fontSize ?: 1.0,
                 range = 0.5..5.0,
                 valueText = { "${(it * 100).toInt()}%" },
                 onChange = onFontSize,
+            )
+            // 字重（TYPE-01 欠账，TYPE-05 补）：Readium 归一化 0.75–1.75，1.0=常规；null 显示 1.0。
+            TypographySlider(
+                label = stringResource(R.string.typography_font_weight),
+                value = typography.fontWeight ?: 1.0,
+                range = 0.75..1.75,
+                valueText = { "%.2f".format(it) },
+                onChange = onFontWeight,
             )
             TypographySlider(
                 label = stringResource(R.string.typography_line_height),
@@ -927,13 +978,14 @@ private fun TypographySheet(
                 onSelect = onTextAlign,
             )
 
-            // 字体（TYPE-01；自定义字体导入是 P1 TYPE-05，这里只给通用字体族预设）
+            // 字体（TYPE-01 + TYPE-05 预置霞鹜文楷；SAF 运行时导入在 Readium 3.3 无工程通道，推后）
             OptionGroup(
                 label = stringResource(R.string.typography_font),
                 options = listOf(
                     null to stringResource(R.string.typography_font_default),
                     "serif" to stringResource(R.string.typography_font_serif),
                     "sans-serif" to stringResource(R.string.typography_font_sans),
+                    ReaderTypography.LXGW_FONT_FAMILY to stringResource(R.string.typography_font_lxgw),
                 ),
                 selected = typography.fontFamily,
                 onSelect = onFontFamily,

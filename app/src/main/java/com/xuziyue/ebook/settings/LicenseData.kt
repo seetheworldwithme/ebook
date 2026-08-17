@@ -21,6 +21,7 @@ object LicenseData {
         BSD_3_CLAUSE("BSD 3-Clause \"New\" or \"Revised\" License", "legal/bsd-3-clause.txt"),
         GPL_CPE("GNU GPL v2 with Classpath Exception", "legal/gpl-cpe.txt"),
         MIT("MIT License", "legal/mit.txt"),
+        OFL_1_1("SIL Open Font License 1.1", "legal/ofl-1.1.txt"),
     }
 
     data class Entry(
@@ -51,6 +52,8 @@ object LicenseData {
         Entry("Hilt / Dagger", "2.60.1", License.APACHE_2_0, "https://dagger.dev/hilt/"),
         Entry("Hilt Navigation Compose", "1.2.0", License.APACHE_2_0, "https://developer.android.com/jetpack/androidx"),
         Entry("Jetpack Compose", "BOM 2026.06.01", License.APACHE_2_0, "https://developer.android.com/jetpack/compose"),
+        // TYPE-05：预置中文字体（霞鹜文楷屏幕阅读版），APK assets 内置，OFL-1.1 允许再分发。
+        Entry("LXGW WenKai Screen (霞鹜文楷屏幕阅读版)", "1.522", License.OFL_1_1, "https://github.com/lxgw/LxgwWenKai-Screen"),
         Entry("jsoup", "1.22.2", License.MIT, "https://jsoup.org/", transitive = true),
         Entry("Kotlin Coroutines", "1.10.2", License.APACHE_2_0, "https://github.com/Kotlin/kotlinx.coroutines"),
         Entry("Kotlinx Datetime", "0.7.1", License.APACHE_2_0, "https://github.com/Kotlin/kotlinx-datetime"),

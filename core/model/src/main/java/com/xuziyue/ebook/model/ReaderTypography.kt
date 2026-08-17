@@ -81,5 +81,14 @@ data class ReaderTypography(
          * Repository 在 DataStore 无记录时返回此值；用户改动后各项被显式覆盖并持久化。
          */
         val Default: ReaderTypography = ReaderTypography(theme = ReaderTheme.SYSTEM)
+
+        /**
+         * TYPE-05 预置字体「霞鹜文楷屏幕阅读版」的 CSS font-family 值。
+         *
+         * 必须与 TTF name 表 family（"LXGW WenKai Screen"）及 ReaderFragment 声明的
+         * `addFontFamilyDeclaration` 完全一致——CSS @font-face 按它匹配，任何一侧改名即静默回退默认字体。
+         * 统一放这里供 UI 选项与声明侧引用，避免两处魔法字符串漂移。
+         */
+        const val LXGW_FONT_FAMILY = "LXGW WenKai Screen"
     }
 }
