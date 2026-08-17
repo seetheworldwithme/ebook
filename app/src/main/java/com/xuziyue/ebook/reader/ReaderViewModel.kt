@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.readium.r2.navigator.Decoration
+import org.readium.r2.navigator.HyperlinkNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubPreferences
@@ -246,10 +247,12 @@ class ReaderViewModel @Inject constructor(
     /** 当前搜索协程（新搜索取消旧的，避免并发竞态）。 */
     private var searchJob: Job? = null
 
-    /** 跳转历史栈（READ-02：目录/进度跳转后可返回上一位置；Navigator 无 history，应用层自管）。 */
-    private val jumpHistory = ArrayDeque<Locator>()
+    /** 跳转历史双栈（READ-09：前进/后退；READ-02 时单向栈只能后退的升级）。 */
+    private val jumpHistory = JumpHistory()
     private val _canGoBack = MutableStateFlow(false)
     val canGoBack: StateFlow<Boolean> = _canGoBack.asStateFlow()
+    private val _canGoForward = MutableStateFlow(false)
+    val canGoForward: StateFlow<Boolean> = _canGoForward.asStateFlow()
 
     private val currentBookId: String? get() = _activeBookId.value
     private val latestLocator: Locator? get() = _latestLocator.value
@@ -300,10 +303,12 @@ class ReaderViewModel @Inject constructor(
 
     private fun openPublication(bookId: String) {
         openJob = viewModelScope.launch {
-            // 切书重置跳转状态（目录 / 历史 / 进度）+ 清空搜索（释放旧 iterator）
+            // 切书重置跳转状态（目录 / 历史 / 进度）+ 链接弹层 + 清空搜索（释放旧 iterator）
             _tableOfContents.value = emptyList()
             jumpHistory.clear()
             _canGoBack.value = false
+            _canGoForward.value = false
+            _linkDialog.value = null
             clearSearch()
 
             val book = bookRepository.getById(bookId) ?: run {
@@ -623,10 +628,10 @@ class ReaderViewModel @Inject constructor(
     fun jumpToBookmark(item: BookmarkItem) = jumpToLocator(item.locator)
 
     /**
-     * 跳到任意 [Locator]（书签 / 批注共用）：先 push 当前位置到 history（可返回），再发指令。
+     * 跳到任意 [Locator]（书签 / 批注 / 搜索结果共用）：先记当前位置到 history（可返回），再发指令。
      */
     fun jumpToLocator(locator: Locator) {
-        pushHistory()
+        recordJumpHistory()
         _navCommands.trySend(ReaderNavCommand.GoToLocator(locator))
     }
 
@@ -652,32 +657,42 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    // ===== 目录 / 进度跳转（READ-02）=====
+    // ===== 目录 / 进度跳转（READ-02）+ 历史前进/后退（READ-09）=====
 
     /** 跳到目录章节：先记当前位置到 history（可返回），再发指令。 */
     fun jumpToLink(link: Link) {
-        pushHistory()
+        recordJumpHistory()
         _navCommands.trySend(ReaderNavCommand.GoToLink(link))
     }
 
     /** 拖动到全书进度（0.0..1.0）：先记位置再发指令。 */
     fun jumpToProgression(progress: Double) {
-        pushHistory()
+        recordJumpHistory()
         _navCommands.trySend(ReaderNavCommand.GoToProgression(progress.coerceIn(0.0, 1.0)))
     }
 
-    /** 返回上一阅读位置（READ-02：跳转后可返回上一个阅读位置）。 */
+    /** 返回上一阅读位置（READ-09：current 进前进栈，可再前进）。 */
     fun goBack() {
-        val from = jumpHistory.removeLastOrNull() ?: return
-        _canGoBack.value = jumpHistory.isNotEmpty()
-        _navCommands.trySend(ReaderNavCommand.GoBack(from))
+        val target = jumpHistory.back(current = latestLocator) ?: return
+        syncHistoryFlags()
+        _navCommands.trySend(ReaderNavCommand.GoBack(target))
     }
 
-    private fun pushHistory() {
-        val current = latestLocator ?: return
-        jumpHistory.addLast(current)
-        while (jumpHistory.size > HISTORY_MAX) jumpHistory.removeFirst()
-        _canGoBack.value = true
+    /** 前进到被 back 撤销的位置（READ-09 新增；current 回压后备栈）。 */
+    fun goForward() {
+        val target = jumpHistory.forward(current = latestLocator) ?: return
+        syncHistoryFlags()
+        _navCommands.trySend(ReaderNavCommand.GoBack(target))
+    }
+
+    private fun recordJumpHistory() {
+        jumpHistory.recordJump(current = latestLocator)
+        syncHistoryFlags()
+    }
+
+    private fun syncHistoryFlags() {
+        _canGoBack.value = jumpHistory.canGoBack
+        _canGoForward.value = jumpHistory.canGoForward
     }
 
     // ===== 书内搜索（READ-05：publication.search → SearchIterator 分批 → 上下文 + 跳转）=====
@@ -854,11 +869,45 @@ class ReaderViewModel @Inject constructor(
         _ttsUtterance.value = null
     }
 
-    // ===== EpubNavigatorFragment.Listener =====
+    // ===== EpubNavigatorFragment.Listener（READ-09：脚注弹层 + 链接确认）=====
+
+    /** 当前链接交互弹层（null = 无）；UI collect 渲染，dismiss 置 null。 */
+    private val _linkDialog = MutableStateFlow<LinkDialog?>(null)
+    val linkDialog: StateFlow<LinkDialog?> = _linkDialog.asStateFlow()
+
+    /**
+     * 内链询问（READ-09 脚注弹层核心）：返回 false 拦截库的默认跳转，改由 app 展示。
+     * - [HyperlinkNavigator.FootnoteContext]（库已取好并清洗 aside 脚注内容）→ [LinkDialog.Footnote] 弹层；
+     * - 无上下文的普通内链（含 EPUB2 无 epub:type 的旧式脚注）→ [LinkDialog.InternalLink] 确认后跳转。
+     */
+    override fun shouldFollowInternalLink(link: Link, context: HyperlinkNavigator.LinkContext?): Boolean {
+        val footnote = (context as? HyperlinkNavigator.FootnoteContext)?.noteContent
+        _linkDialog.value = internalLinkDialog(link, footnote)
+        return false
+    }
+
+    /** 关闭链接弹层（脚注关闭 / 确认框取消共用）。 */
+    fun dismissLinkDialog() {
+        _linkDialog.value = null
+    }
+
+    /** 内链确认「跳转」：记历史后按普通目录跳转执行（READ-09 验收「脚注跳转可返回」）。 */
+    fun confirmInternalLink(link: Link) {
+        _linkDialog.value = null
+        jumpToLink(link)
+    }
 
     override fun onExternalLinkActivated(url: AbsoluteUrl) {
-        // 红线 #4 + design.md §7：外链交系统浏览器，不在 WebView 内打开。
-        // Phase 0 简化为直接打开；Phase 1 READ-09 加用户确认弹窗。
+        // 红线 #4 + design.md §7：外链不经确认不得打开（Phase 0 直接 startActivity 是过渡实现）。
+        // 确认后 [confirmExternalLink] 交系统浏览器，绝不在 WebView 内打开。
+        _linkDialog.value = LinkDialog.ExternalLink(url)
+    }
+
+    /** 外链确认「继续打开」：交系统浏览器（READ-09 验收「外链不会静默打开」）。 */
+    fun confirmExternalLink() {
+        val url = (_linkDialog.value as? LinkDialog.ExternalLink)?.url
+        _linkDialog.value = null
+        if (url == null) return
         runCatching {
             val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url.toString()))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -876,12 +925,10 @@ class ReaderViewModel @Inject constructor(
 
     private companion object {
         const val PERSIST_DEBOUNCE_MS = 1500L
-        /** 跳转 history 最大深度（防内存膨胀）。 */
-        const val HISTORY_MAX = 20
-        /** 书签摘录最大长度（页级上下文，截 Locator.text.after）。 */
-        const val EXCERPT_MAX = 80
         /** 书签 locator 等价判定的 progression 容差（与 BookmarkRepository 一致）。 */
         const val PROGRESSION_EPS = 1e-3
+        /** 书签摘录最大长度（页级上下文，截 Locator.text.after）。 */
+        const val EXCERPT_MAX = 80
         // 排版数值范围（UI 滑块同此；null = 引擎默认，coerce 仅约束显式设置的值）。
         const val FONT_SIZE_MIN = 0.5
         const val FONT_SIZE_MAX = 5.0

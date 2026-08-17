@@ -88,6 +88,14 @@
     <string name="reader_toc">目录</string>
     <string name="reader_search">搜索</string>
     <string name="reader_go_back">返回上一阅读位置</string>
+    <string name="reader_go_forward">前进到下一阅读位置</string>
+    <string name="reader_footnote_title">脚注</string>
+    <string name="reader_internal_link_title">跳转链接</string>
+    <string name="reader_internal_link_confirm">跳转</string>
+    <string name="reader_internal_link_text">即将跳转到书内链接指向的位置，跳转后可返回当前位置。</string>
+    <string name="reader_external_link_title">打开外部链接</string>
+    <string name="reader_external_link_text">此链接指向外部网站，将由系统浏览器打开：</string>
+    <string name="reader_external_link_open">继续打开</string>
     <string name="reader_add_bookmark">加书签</string>
     <string name="reader_remove_bookmark">取消书签</string>
     <string name="reader_progress">进度 %1$s</string>

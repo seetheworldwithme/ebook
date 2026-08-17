@@ -88,6 +88,14 @@
     <string name="reader_toc">Contents</string>
     <string name="reader_search">Search</string>
     <string name="reader_go_back">Go back to previous position</string>
+    <string name="reader_go_forward">Go forward to next position</string>
+    <string name="reader_footnote_title">Footnote</string>
+    <string name="reader_internal_link_title">Follow link</string>
+    <string name="reader_internal_link_confirm">Jump</string>
+    <string name="reader_internal_link_text">You are about to jump to the position this in-book link points to. You can go back afterwards.</string>
+    <string name="reader_external_link_title">Open external link</string>
+    <string name="reader_external_link_text">This link points to an external website and will be opened in your browser:</string>
+    <string name="reader_external_link_open">Open anyway</string>
     <string name="reader_add_bookmark">Add bookmark</string>
     <string name="reader_remove_bookmark">Remove bookmark</string>
     <string name="reader_progress">Progress %1$s</string>

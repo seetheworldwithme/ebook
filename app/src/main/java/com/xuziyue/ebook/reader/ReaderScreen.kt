@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
+import android.webkit.WebView
 import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -104,6 +105,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.compose.AndroidFragment
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
@@ -151,6 +153,8 @@ fun ReaderScreen(
     val progression by viewModel.progression.collectAsStateWithLifecycle()
     val tableOfContents by viewModel.tableOfContents.collectAsStateWithLifecycle()
     val canGoBack by viewModel.canGoBack.collectAsStateWithLifecycle()
+    val canGoForward by viewModel.canGoForward.collectAsStateWithLifecycle()
+    val linkDialog by viewModel.linkDialog.collectAsStateWithLifecycle()
     val decorations by viewModel.decorations.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val typography by viewModel.typography.collectAsStateWithLifecycle()
@@ -318,6 +322,7 @@ fun ReaderScreen(
             ReaderTopBar(
                 progressText = progressText,
                 canGoBack = canGoBack,
+                canGoForward = canGoForward,
                 isBookmarked = isBookmarked,
                 canBookmark = capabilities.canBookmark,
                 canSearch = capabilities.canSearch,
@@ -327,6 +332,7 @@ fun ReaderScreen(
                 onOpenSearch = { showSearch = true },
                 onOpenTts = { showTts = true },
                 onGoBack = { viewModel.goBack() },
+                onGoForward = { viewModel.goForward() },
                 onToggleBookmark = { viewModel.toggleBookmark() },
                 onOpenProgress = { showProgress = true },
             )
@@ -513,6 +519,25 @@ fun ReaderScreen(
             )
         }
 
+        // READ-09 链接交互：脚注弹层 / 内链确认 / 外链确认（VM 拦截后驱动，三态互斥）。
+        when (val dialog = linkDialog) {
+            is LinkDialog.Footnote -> FootnotePopup(
+                contentHtml = dialog.contentHtml,
+                onDismiss = { viewModel.dismissLinkDialog() },
+            )
+            is LinkDialog.InternalLink -> InternalLinkConfirmDialog(
+                link = dialog.link,
+                onConfirm = { viewModel.confirmInternalLink(dialog.link) },
+                onDismiss = { viewModel.dismissLinkDialog() },
+            )
+            is LinkDialog.ExternalLink -> ExternalLinkConfirmDialog(
+                url = dialog.url.toString(),
+                onConfirm = { viewModel.confirmExternalLink() },
+                onDismiss = { viewModel.dismissLinkDialog() },
+            )
+            null -> Unit
+        }
+
         // Loading 遮罩（打开 Publication 中 / 进程重建重 open 中）
         val loadingText = stringResource(R.string.reader_loading)
         if (uiState is ReaderUiState.Loading) {
@@ -544,6 +569,7 @@ fun ReaderScreen(
 private fun ReaderTopBar(
     progressText: String,
     canGoBack: Boolean,
+    canGoForward: Boolean,
     isBookmarked: Boolean,
     canBookmark: Boolean,
     canSearch: Boolean,
@@ -553,6 +579,7 @@ private fun ReaderTopBar(
     onOpenSearch: () -> Unit,
     onOpenTts: () -> Unit,
     onGoBack: () -> Unit,
+    onGoForward: () -> Unit,
     onToggleBookmark: () -> Unit,
     onOpenProgress: () -> Unit,
     modifier: Modifier = Modifier,
@@ -591,6 +618,12 @@ private fun ReaderTopBar(
                 if (canGoBack) {
                     IconButton(onClick = onGoBack) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.reader_go_back))
+                    }
+                }
+                // READ-09：back 撤销过的跳转可重做（无前进历史时隐藏；与上按钮成对）。
+                if (canGoForward) {
+                    IconButton(onClick = onGoForward) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.reader_go_forward))
                     }
                 }
             }
@@ -1695,4 +1728,107 @@ private fun Context.findActivity(): Activity {
         ctx = ctx.baseContext
     }
     error("无法从 Context 找到 Activity")
+}
+
+/**
+ * 脚注弹层（READ-09）：WebView 渲染 Readium 清洗后的脚注 HTML 片段。
+ *
+ * 红线 #4 口径：noteContent 已经过库内 `Jsoup.clean(Safelist.relaxed())`（去脚本/事件处理器），
+ * 本层再收紧——JS 关闭、外部网络加载一律拒绝（app 本就无 INTERNET 权限）、
+ * `loadDataWithBaseURL(null,…)` 使相对链接不可解析。深浅色由主题包裹适配。
+ */
+@Composable
+private fun FootnotePopup(
+    contentHtml: String,
+    onDismiss: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.reader_footnote_title)) },
+        text = {
+            // WebView 在 AndroidView 内一次性加载内容；state 变化仅来自弹层重建。
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp),
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        settings.javaScriptEnabled = false
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        // 深浅色：夜间用浅字深底，避免黑底黑字。
+                        setBackgroundColor(
+                            if (isDark) 0xFF1C1B1F.toInt() else android.graphics.Color.WHITE,
+                        )
+                        loadDataWithBaseURL(null, wrapFootnoteHtml(contentHtml, isDark), "text/html", "utf-8", null)
+                    }
+                },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.reader_close)) }
+        },
+    )
+}
+
+/** 脚注 HTML 片段包一层排版（字体大小 / 行高 / 夜间配色），避免默认 16px 正文过小。 */
+private fun wrapFootnoteHtml(html: String, isDark: Boolean): String {
+    val color = if (isDark) "#E6E1E5" else "#1C1B1F"
+    return """
+        <html><head><meta charset="utf-8"><style>
+        body { margin: 0; padding: 4px; color: $color; font-size: 15px; line-height: 1.6;
+               word-break: break-word; }
+        </style></head><body>$html</body></html>
+    """.trimIndent()
+}
+
+/** 内链确认弹窗（READ-09：普通内链 / EPUB2 旧式脚注跳转前确认；跳转后可返回）。 */
+@Composable
+private fun InternalLinkConfirmDialog(
+    link: Link,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.reader_internal_link_title)) },
+        text = { Text(stringResource(R.string.reader_internal_link_text)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.reader_internal_link_confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
+}
+
+/** 外链确认弹窗（READ-09 验收：外链不会静默打开；确认后交系统浏览器）。 */
+@Composable
+private fun ExternalLinkConfirmDialog(
+    url: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.reader_external_link_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.reader_external_link_text))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.reader_external_link_open)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
 }

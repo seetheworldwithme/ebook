@@ -19,11 +19,11 @@
 | 优先级 | 总数 | 已完成 ✅ | 进行中 🚧 |
 | --- | --- | --- | --- |
 | P0（MVP 必做） | 28 | 27 | 1 |
-| P1（首个增强版） | 11 | 6 | 2 |
+| P1（首个增强版） | 11 | 6 | 3 |
 | P2（长期候选） | 3 | 0 | 0 |
-| 合计 | 42 | 33 | 3 |
+| 合计 | 42 | 33 | 4 |
 
-> 当前进度：33 ✅ / 3 🚧（SET-02 TalkBack 手指项 + TYPE-05 + READ-10 待真机回归）。详见文末变更记录。
+> 当前进度：33 ✅ / 4 🚧（SET-02 TalkBack 手指项 + TYPE-05 + READ-10 + READ-09 待真机回归）。详见文末变更记录。
 
 ---
 
@@ -112,7 +112,7 @@
 | IMP-07 | ✅ | 删除书籍时选「仅移除」或「同时删 App 内副本」。首刀（2026-08-13）：首页长按书卡弹确认框直接删（DB+文件一起删，ForeignKey CASCADE 自动清进度/书签/笔记）；经徐先生确认跳过「仅移除/删副本」二选一（私有目录下留孤儿文件无意义、重导有 contentHash 去重）。真机回归（vivo V2329A）全过：长按确认删除（DB-1 + 书源/封面文件删 + 列表消失）、取消防误删、FATAL=0。详见变更记录 |
 | LIB-05 | ✅ | 收藏、标签、自定义书架。V1 一刀（2026-08-14）：决策口径——收藏=特殊书架「收藏」(SYSTEM_FAVORITE 固定 id)、标签=书架合一(只 Collection/CollectionBook 一套表)。Room v3→v4 加 collections+collection_books 两表(双向 FK CASCADE)+系统书架迁移时插入+CollectionRepository(clock/idGenerator 注入)+书架 Tab(第4个)+书架列表/书架内浏览+CollectionPickerSheet(多选+内联新建)+详情页 chips+收藏 toggle。**真机回归（vivo V2329A）全过**：迁移 user_version=4 + 系统书架插入 + CASCADE 删书架清关系书不删 + 书架 Tab/列表/新建/重命名/删除 + 详情页 chips + 收藏 toggle(修复图标 tint 后灰↔蓝双向清晰) |
 | LIB-06 | ✅ | 批量选择、移动到书架、删除、重新提取元数据。V1 一刀（2026-08-14）：批量选择/移动到书架/批量删除已完成——长按进入选择模式(combinedClickable 复用 IMP-07)+上下文操作栏(全选/加入书架/删除/取消)+批量加入(DAO IGNORE 幂等)+批量删除(汇总成功数)。**重新提取元数据推后单独处理**(依赖读源文件重跑 ExtractUseCase，与书架正交)。**真机回归（vivo V2329A）全过**：长按进批量模式 + 选多本 + 加入书架书架内可见 + 批量删除确认+汇总 |
-| READ-09 | ⬜ | 历史位置前进 / 后退、脚注弹层、外链确认 |
+| READ-09 | 🚧 | 历史位置前进 / 后退、脚注弹层、外链确认。V1 一刀（2026-08-17，源码级调研 Readium HyperlinkNavigator 后落地）：①历史双栈（READ-02 单向栈升级，浏览器 back/forward 语义）+ 顶栏前进按钮；②脚注弹层——拦截 `shouldFollowInternalLink` 返回 false，用库已清洗的 `FootnoteContext.noteContent`（jsoup Safelist.relaxed）经 WebView 渲染（JS 关/无 baseUrl/拒绝外部加载，红线 #4）；③EPUB2 无 epub:type 旧式脚注与普通内链弹确认后跳转；④外链不再静默 startActivity，改确认弹窗（design.md §7）。311 单测+编译+lint 全绿。**待真机回归转 ✅**：含脚注样本点按弹层/确认跳转可返回/前进重做/外链弹确认+取消不跳浏览器 |
 | READ-10 | 🚧 | TTS 朗读（播放/暂停/调速/选声/定时，音频焦点抢占正确暂停）。V1 一刀（2026-08-17，徐先生拍板口径：**页面内播放**——前台服务+MediaSession 媒体通知留 P2）：`readium-navigator-media-tts:3.3.0`（独立工件，新架构）+ 显式 `media3-common-ktx:1.10.0`（POM 是 runtime scope）+ Manifest `TTS_SERVICE` queries（Android 11+ 引擎可见性）+ `ReaderTtsManager`（懒创建 `AndroidTtsNavigatorFactory`→`TtsNavigator`，无 ContentService/引擎失败给可理解错误）+ `TtsTimer` 定时停止（虚拟时间单测）+ `ReaderTtsPreferencesRepository`（语速/发音人/定时 DataStore 持久化）+ `TtsSheet` 面板（播放控制/语速 0.5–2.0×/发音人/定时 chips）+ 当前句 `tts` Decoration 组蓝色下划线高亮 + 自动跟翻（句级，不走 jumpHistory）+ TTS 播放中音量键放行（不与媒体音量冲突）+ 缺语音数据拉起系统下载。音频焦点由库内 TtsSessionAdapter.AudioFocusManager 处理。301 单测 + lint 全绿。**待真机回归转 ✅**：起播/暂停/续播/语速实时/换声/定时到期自停/音频焦点双向/音量键/高亮跟翻/TXT 可读/无引擎错误路径 |
 | TYPE-05 | ⬜ | 自定义字体导入、按书保存排版偏好 |
 | DATA-03 | ✅ | 全量备份 / 恢复（含数据库、设置、可选书籍文件，恢复前预览冲突）。V1 第一刀（2026-08-14）：ZIP 打包（backup.json 全表 + settings + books/ + covers/，流式写 + 临时文件原子 copy 到 SAF）+ 恢复（preview 按 contentHash 分类 NEW/UNCHANGED/进度或笔记更新 + restore 三策略 SKIP/OVERWRITE/MERGE + Zip Slip 逐 entry 防护 + contentHash 去重复用本地 + 临时文件 rename）。BackupScreen（导出 SAF CreateDocument + 导入 SAF OpenDocument → 预览对话框三策略 RadioButton）+ 设置页入口。**真机回归（vivo V2329A）全过**：备份生成 `ebook-backup-20260814.zip`（4.86MB）解压验结构（backup.json schemaVersion=1 + books/{id}.txt 10.25MB + 全表导出 + settings 5 key）+ 恢复预览对话框（徐先生手指选 SAF 文件，弹「备份含 1 本，新增 0 冲突 0」+ 三策略）+ SKIP 策略恢复不破坏现有数据（books/progress/sessions 不变）+ 全程无 FATAL |
@@ -167,6 +167,15 @@
 ## 变更记录
 
 > 按 `> 实现状态（日期）：…` 风格累积，最新的在最上面。
+
+> 实现状态（2026-08-17）：**READ-09 历史前进/后退 + 脚注弹层 + 外链确认代码完成 ⬜→🚧（单测 311 + 编译 + lint 全绿，真机回归待做）。** 徐先生拍板先做 READ-09（不动真机、纯代码+单测可闭环；READ-02 已有 jumpHistory 单向栈地基）。
+> **Readium 侧源码级调研（jar 反编译坐实，非文档推断）**：① **脚注链路**——`R2BasicWebView.onTap` 用 jsoup 检测 `a[epub:type=noteref]` → 取 href fragment → runBlocking 读目标资源 `aside#id` 的 innerHTML → **内容经 `Jsoup.clean(Safelist.relaxed())` 清洗**（脚本/事件处理器已剥，红线 #4 的 XSS 面由库兜住）→ 包成 `FootnoteContext(noteContent)` → 经 `EpubNavigatorViewModel.navigateToUrl` 调 `listener.shouldFollowInternalLink(link, context)` 询问 app——返回 true 页内跳转，返回 false 拦截交 app 自行展示（我们选后者弹弹层）。**EPUB2 无 epub:type 的旧式脚注不走这条**，走普通内链（`LinkContext` 无内容）。② **外链**——`internalLinkFromUrl` 解析不出内链时调 `onExternalLinkActivated(url)`，此前实现直接 startActivity（Phase 0 注释里就写着「Phase 1 READ-09 加用户确认弹窗」，本刀补上）。③ **onJumpToLocator 不可用作历史信号**——只在 `go(locator)` 与 FXL 跨资源 goForward/goBackward 触发，与显式跳转混用会与 back/forward 循环；历史 push 维持在 VM 显式跳转入口 + `shouldFollowInternalLink` 返回 true 前。
+> **① 历史双栈（READ-02 单向栈升级）**：新文件 `JumpHistory.kt`（back/forward 双 ArrayDeque 各 MAX_DEPTH=20；`recordJump(current)` push 后备栈+**清前进栈**——新跳转截断 redo 分支，浏览器同款语义；`back(current)` 弹后备栈顶、current 进前进栈；`forward(current)` 逆操作；current 为 null 静默降级不入栈防空位污染）。VM：`goBack()` 改带 current 进前进栈 + 新增 `goForward()` + `canGoForward` StateFlow；顶栏 KeyboardArrowRight 按钮（canGoForward gating，与返回按钮成对）；目录/进度/搜索/书签/批注/内链确认跳转全部走 `recordJumpHistory()`。**指令复用 `GoBack(locator)`**——back/forward 对 navigator 都是 `go(locator)`，无语义差，不新增指令类型。
+> **② 脚注弹层**：VM 持 `linkDialog: StateFlow<LinkDialog?>`（密封三态 Footnote/InternalLink/ExternalLink，新文件 ReaderLinkDialogs.kt + `internalLinkDialog(link, footnote)` 纯函数分流——有 noteContent 弹脚注、空白降级内链确认）；`shouldFollowInternalLink` 返回 false 并折叠状态；UI `FootnotePopup`（AlertDialog + AndroidView WebView 渲染：**JS 关 / allowFileAccess·allowContentAccess 关 / `loadDataWithBaseURL(null,…)` 相对链接不可解析 / 深浅色配色适配**，红线 #4 不当可信网页的四重收紧；wrapFootnoteHtml 包 15px/1.6 行高排版）。**关闭即读，无跳转**——弹层方案不动阅读位置，符合「脚注看完继续读」直觉。
+> **③ 内链确认**：EPUB2 旧式脚注（无 epub:type）与普通内链弹 `InternalLinkConfirmDialog`（跳转/取消），确认后走 `jumpToLink`（记历史，满足验收「脚注跳转均可返回」）。
+> **④ 外链确认**：`onExternalLinkActivated` 不再直接 startActivity，改存 `LinkDialog.ExternalLink`；`ExternalLinkConfirmDialog` 展示完整 URL + 「继续打开/取消」，确认才 `confirmExternalLink()` 交系统浏览器（FLAG_ACTIVITY_NEW_TASK 保留）。**满足验收「外链不会静默打开」**。
+> **测试（+10 新增，全绿）**：JumpHistoryTest 7（recordJump 清前进栈/往返重做/空栈 null/null current 降级/容量封顶/clear）+ ReaderLinkDialogsTest 3（有内容→Footnote/空白降级→InternalLink/无上下文→InternalLink）。**踩坑**：JumpHistoryTest 首版测试场景造错（recordJump(c) 后 back 时 current 传 c 而非跳转落点 d，把「从 c 跳走」与「跳到 c」混了）——测试先红暴露了语义理解偏差，按真实用户流重写（a/b/c 各跳走一次落 d，退三步到 a 进三步回 d）后绿，JumpHistory 实现零改动（实现是对的，测试场景错了）。`:app:testDebugUnitTest` **311 passed**（0 fail/0 error/0 skip）+ `:app:assembleDebug` + `:app:lintDebug` + `:core:model` + `:reader:readium` 回归全绿。zh/en 各 +8 字符串（reader_go_forward/footnote/internal_link*/external_link*），StringResourceKeysTest key-parity 自动覆盖。
+> **待真机回归（🚧→✅ 条件，vivo V2329A）**：① 含脚注样本（EPUB3 epub:type=noteref）点脚注标记 → 弹层显示脚注内容（非跳转）；② 弹层关闭后位置不变、继续阅读；③ EPUB2 旧式脚注（山海經样本若含）→ 弹内链确认 → 跳转 → 顶栏返回按钮可回原位；④ 目录跳转 → back 返回 → **forward 前进按钮出现且可重做**；⑤ 外链（样本含外部 http 链接）→ 弹确认显示 URL → 取消不跳浏览器 / 确认弹系统浏览器；⑥ 夜间模式下脚注弹层可读；⑦ 全程零 FATAL。**样本缺口**：samples/public 现有三本（ruby/rtl/vertical）未确认含 noteref 脚注，真机前需先补一个含 epub:type=noteref 脚注的样本（可扩 gen_typography_fixtures.py 生成器或手工造最小样本）。
 
 > 实现状态（2026-08-17）：**READ-10 TTS 朗读代码完成 ⬜→🚧（单测 301 + 编译 + lint 全绿，真机回归待做）。徐先生拍板口径：V1 页面内播放（息屏/切 app 进程活着可继续），前台服务 + MediaSession 媒体通知（稳定后台听书）推后 P2。**
 > **依赖（红线 #7）**：`org.readium.kotlin-toolkit:readium-navigator-media-tts:3.3.0`（独立工件——新架构 `org.readium.navigator.media.tts` 包，不在 readium-navigator 内，仓库调研时确认老 `TtsNavigator` 已重写到此工件；BSD-3 与主工件同项目归并披露）+ **显式** `androidx.media3:media3-common-ktx:1.10.0`（media-tts 的 POM 把 media3 声明为 runtime scope，不显式加编译期拿不到 PlaybackParameters 等类型；Apache-2.0 已在清单）。Manifest 加 `<queries>` TTS_SERVICE intent（Android 11+ 包可见性，Readium tts.md 官方要求，否则 TextToSpeech 拿不到引擎）。
