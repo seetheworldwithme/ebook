@@ -4,15 +4,17 @@ name: Android APK
 # debug APK 使用 Android 默认 debug 证书签名；正式发布仍应在本地或后续 CI 中配置 release 签名。
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 
-# 同一个分支/标签的新推送会取消旧任务，节省 Actions 配额。
+# 同一个分支的新推送会取消旧任务，节省 Actions 配额。
 concurrency:
   group: android-apk-${{ github.ref }}
   cancel-in-progress: true
 
+# 发布 Release 需要写权限
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -50,3 +52,18 @@ jobs:
             releases/android/*.sha256
           if-no-files-found: error
           retention-days: 14
+
+      # 滚动 prerelease：每次 push 到 main 重建 v0.1.0-ci 这个 tag 的 Release，
+      # Releases 页始终能直接下载最新安装包。
+      - name: 发布到 GitHub Release（滚动 prerelease）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$(grep -E '^[[:space:]]*versionName' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')-ci"
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" releases/android/*.apk releases/android/*.sha256 \
+            --title "ebook ${TAG#v}（${GITHUB_SHA::7}）" \
+            --notes "由 push 自动构建的 debug 安装包（commit ${GITHUB_SHA}）。
+          - 直接下载 apk 安装；.sha256 为校验文件
+          - debug 签名，版本以 versionName 为准" \
+            --prerelease
