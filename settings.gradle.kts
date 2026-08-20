@@ -1,10 +1,10 @@
 // 国内镜像仅本地使用：海外 CI（GitHub Actions 等）访问阿里云镜像会 502，
 // 且 Gradle 遇 5xx 后不再回退后续官方仓库，直接解析失败。
-val useCnMirrors = System.getenv("CI") == null
+// 注：pluginManagement 块单独编译，引用不到顶层 val，只能内联 System.getenv("CI")。
 
 pluginManagement {
     repositories {
-        if (useCnMirrors) {
+        if (System.getenv("CI") == null) {
             // 国内镜像优先：规避 dl.google.com 网络问题 + 加速
             maven("https://maven.aliyun.com/repository/google")
             maven("https://maven.aliyun.com/repository/central")
@@ -18,7 +18,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        if (useCnMirrors) {
+        if (System.getenv("CI") == null) {
             maven("https://maven.aliyun.com/repository/google")
             maven("https://maven.aliyun.com/repository/central")
             maven("https://maven.aliyun.com/repository/jitpack.io")
