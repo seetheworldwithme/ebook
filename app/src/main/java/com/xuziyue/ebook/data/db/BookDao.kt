@@ -76,6 +76,40 @@ interface BookDao {
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    /**
+     * 恢复备份用：按 id 全字段 UPDATE（不 delete+insert）。
+     *
+     * delete 会触发外键 CASCADE 连带删除该书进度/书签/批注/排版，破坏 MERGE 语义
+     * （审查严重问题 #1）；本方法只更新 books 行本身，子表不受影响。行不存在时不做任何事。
+     */
+    @Query(
+        """
+        UPDATE books SET
+            contentHash = :contentHash, title = :title, authors = :authors,
+            description = :description, language = :language, format = :format,
+            mediaType = :mediaType, filePath = :filePath, fileSize = :fileSize,
+            coverPath = :coverPath, importedAt = :importedAt, lastOpenedAt = :lastOpenedAt,
+            status = :status
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateAllFields(
+        id: String,
+        contentHash: String,
+        title: String,
+        authors: List<String>,
+        description: String?,
+        language: String?,
+        format: String,
+        mediaType: String,
+        filePath: String,
+        fileSize: Long,
+        coverPath: String?,
+        importedAt: Long,
+        lastOpenedAt: Long?,
+        status: ReadingStatus,
+    )
+
     /** 全表快照（全量备份 DATA-03 用，非响应式）。 */
     @Query("SELECT * FROM books")
     suspend fun snapshotAll(): List<BookEntity>

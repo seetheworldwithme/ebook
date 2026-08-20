@@ -818,6 +818,9 @@ class ReaderViewModel @Inject constructor(
 
     private var ttsManager: ReaderTtsManager? = null
 
+    /** 当前活跃的 TTS 会话管理器（null = 未创建）。UI 派生流（voices/timer）以此为源，随会话创建/关闭联动。 */
+    private val _activeTtsManager = MutableStateFlow<ReaderTtsManager?>(null)
+
     /** TTS 播放态（UI 面板 + Fragment 音量键放行共用）。 */
     val ttsPlaying: StateFlow<Boolean> get() = _ttsPlaying
     private val _ttsPlaying = MutableStateFlow(false)
@@ -840,6 +843,7 @@ class ReaderViewModel @Inject constructor(
             preferencesRepository = ttsPreferencesRepository,
         )
         ttsManager = manager
+        _activeTtsManager.value = manager
         viewModelScope.launch {
             manager.isPlaying.collect { _ttsPlaying.value = it }
         }
@@ -895,18 +899,21 @@ class ReaderViewModel @Inject constructor(
     val ttsPreferences: StateFlow<ReaderTtsPreferencesRepository.TtsPrefs?> = ttsPreferencesRepository.observe()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** 可选发音人列表（TTS 会话就绪后非空）。 */
-    val ttsVoices: StateFlow<List<AndroidTtsEngine.Voice>> = ttsManager?.voices
-        ?: MutableStateFlow(emptyList())
+    /** 可选发音人列表（TTS 会话就绪后非空；随会话创建/关闭动态派生，修复审查严重问题 #6）。 */
+    val ttsVoices: StateFlow<List<AndroidTtsEngine.Voice>> =
+        _activeTtsManager.flatMapLatest { it?.voices ?: flowOf(emptyList()) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** TTS 定时当前值（分钟）。 */
-    val ttsTimerMinutes: StateFlow<Int> = ttsManager?.timerMinutes
-        ?: MutableStateFlow(0)
+    /** TTS 定时当前值（分钟；随会话动态派生）。 */
+    val ttsTimerMinutes: StateFlow<Int> =
+        _activeTtsManager.flatMapLatest { it?.timerMinutes ?: flowOf(0) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     /** 关闭 TTS 会话（切书 / onCleared；进程内页面播放口径，退出阅读页即停）。 */
     private fun closeTts() {
         ttsManager?.close()
         ttsManager = null
+        _activeTtsManager.value = null
         _ttsPlaying.value = false
         _ttsUtterance.value = null
     }

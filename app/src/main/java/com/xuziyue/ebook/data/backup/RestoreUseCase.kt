@@ -4,11 +4,19 @@ import android.content.Context
 import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.room.withTransaction
 import com.xuziyue.ebook.R
 import com.xuziyue.ebook.data.EpubSecurityValidator
 import com.xuziyue.ebook.data.db.AnnotationDao
 import com.xuziyue.ebook.data.db.AnnotationEntity
+import com.xuziyue.ebook.data.db.BookDatabase
 import com.xuziyue.ebook.data.db.BookDao
 import com.xuziyue.ebook.data.db.BookEntity
 import com.xuziyue.ebook.data.db.BookmarkDao
@@ -51,6 +59,7 @@ import kotlinx.coroutines.withContext
  * @property preview/restore 返回 [Outcome]（成功条数 / 失败可读原因）。
  */
 class RestoreUseCase(
+    private val db: BookDatabase,
     private val bookDao: BookDao,
     private val progressDao: ReadingProgressDao,
     private val bookmarkDao: BookmarkDao,
@@ -146,105 +155,140 @@ class RestoreUseCase(
         var newBooks = 0
         var overwritten = 0
         var skipped = 0
-        var totalBytes = 0L
         // backup bookId → 恢复后实际 bookId（本地已存在则复用本地 id），供书架关系重映射。
         val bookIdMap = mutableMapOf<String, String>()
+        // 已落盘（staging rename 完成）的目标文件，事务失败时回滚删除（红线 #6：失败不留半条记录）。
+        val committedFiles = mutableListOf<File>()
 
-        for (bookRow in dto.books) {
-            val local = bookDao.getByContentHash(bookRow.contentHash)
-            val isConflict = local != null
-            if (isConflict && strategy == Strategy.SKIP_CONFLICTS) {
-                skipped++
-                continue
-            }
+        // DB 侧整体事务：中途任一步失败全部回滚，绝不留半恢复状态（修复审查严重问题 #2）。
+        val txnResult = runCatching {
+            db.withTransaction {
+                for (bookRow in dto.books) {
+                    val local = bookDao.getByContentHash(bookRow.contentHash)
+                    val isConflict = local != null
+                    if (isConflict && strategy == Strategy.SKIP_CONFLICTS) {
+                        skipped++
+                        continue
+                    }
 
-            // 决定目标 bookId：本地存在则复用本地 id（避免重复），否则用 backup id。
-            val targetBookId = local?.id ?: bookRow.id
+                    // 决定目标 bookId：本地存在则复用本地 id（避免重复），否则用 backup id。
+                    val targetBookId = local?.id ?: bookRow.id
 
-            // 书籍文件落盘（contentHash 去重：目标已存在则跳过复用，避免重复占空间）
-            val bookFile = extracted.books[bookRow.id]
-            if (bookFile != null) {
-                val dest = File(context.filesDir, "books").apply { mkdirs() }
-                val target = File(dest, "${bookRow.contentHash}.${extOf(bookRow.filePath)}")
-                if (!target.exists()) {
-                    val tmp = File(dest, "restore-${bookRow.id}.tmp")
-                    bookFile.inputStream().use { it.copyTo(tmp.outputStream()) }
-                    if (!tmp.renameTo(target)) { tmp.inputStream().use { it.copyTo(target.outputStream()) }; tmp.delete() }
-                    totalBytes += target.length()
-                    if (totalBytes > MAX_RESTORE_TOTAL) {
-                        return@withContext Outcome.Failed(UserMessage.Res(R.string.backup_too_large))
+                    // 书籍文件落盘（contentHash 去重：目标已存在则跳过复用，避免重复占空间）。
+                    // 先写 staging 临时文件，DB 事务成功后再 rename 到正式位置（原子替换，修复审查严重问题 #2）。
+                    val bookFile = extracted.books[bookRow.id]
+                    if (bookFile != null) {
+                        val dest = File(context.filesDir, "books").apply { mkdirs() }
+                        val target = File(dest, "${bookRow.contentHash}.${extOf(bookRow.filePath)}")
+                        if (!target.exists()) {
+                            val staged = File(dest, "staging-${bookRow.id}.tmp")
+                            bookFile.inputStream().use { it.copyTo(staged.outputStream()) }
+                            committedFiles.add(target)
+                            if (!staged.renameTo(target)) {
+                                staged.inputStream().use { it.copyTo(target.outputStream()) }; staged.delete()
+                            }
+                        }
+                    }
+                    // 封面
+                    val coverFile = extracted.covers[bookRow.id]
+                    var resolvedCoverPath: String? = bookRow.coverPath
+                    if (coverFile != null) {
+                        val cdir = File(context.filesDir, "covers").apply { mkdirs() }
+                        val ctarget = File(cdir, "$targetBookId.png")
+                        if (!ctarget.exists()) {
+                            coverFile.inputStream().use { it.copyTo(ctarget.outputStream()) }
+                        }
+                        resolvedCoverPath = ctarget.absolutePath
+                    }
+
+                    // 写书记录：字段级 UPDATE（不 delete+insert，保住本地子表——修复审查严重问题 #1）。
+                    val entity = BookEntity(
+                        id = targetBookId,
+                        contentHash = bookRow.contentHash,
+                        title = bookRow.title,
+                        authors = bookRow.authors,
+                        description = bookRow.description,
+                        language = bookRow.language,
+                        format = bookRow.format,
+                        mediaType = bookRow.mediaType,
+                        filePath = File(context.filesDir, "books/${bookRow.contentHash}.${extOf(bookRow.filePath)}").absolutePath,
+                        fileSize = bookRow.fileSize,
+                        coverPath = resolvedCoverPath,
+                        importedAt = bookRow.importedAt,
+                        lastOpenedAt = bookRow.lastOpenedAt,
+                        status = runCatching { ReadingStatus.valueOf(bookRow.status) }.getOrDefault(ReadingStatus.UNREAD),
+                    )
+                    upsertBook(entity)
+                    if (isConflict) overwritten++ else newBooks++
+
+                    // 进度 / 书签 / 批注 / 会话按策略写入
+                    restoreRelated(dto, targetBookId, bookRow.id, strategy, local != null)
+                    bookIdMap[bookRow.id] = targetBookId
+                }
+
+                // 书架 / 关系恢复（LIB-05）：collections 直接 upsert（系统书架确保存在），关系按 bookIdMap 重映射。
+                restoreCollections(dto, bookIdMap)
+
+                // 按书排版恢复（TYPE-05）：SKIP 策略不动本地，其余按 bookIdMap 重映射后 upsert（孤儿跳过）。
+                if (strategy != Strategy.SKIP_CONFLICTS) {
+                    dto.bookTypography.forEach { row ->
+                        val targetBookId = bookIdMap[row.bookId] ?: return@forEach // 书被跳过，覆盖不留孤儿
+                        bookTypographyDao.upsert(
+                            BookTypographyEntity(
+                                bookId = targetBookId,
+                                overridesJson = row.overridesJson,
+                                updatedAt = row.updatedAt,
+                            ),
+                        )
                     }
                 }
             }
-            // 封面
-            val coverFile = extracted.covers[bookRow.id]
-            var resolvedCoverPath: String? = bookRow.coverPath
-            if (coverFile != null) {
-                val cdir = File(context.filesDir, "covers").apply { mkdirs() }
-                val ctarget = File(cdir, "$targetBookId.png")
-                if (!ctarget.exists()) {
-                    coverFile.inputStream().use { it.copyTo(ctarget.outputStream()) }
-                }
-                resolvedCoverPath = ctarget.absolutePath
-            }
+        }
 
-            // 写书记录
-            val entity = BookEntity(
-                id = targetBookId,
-                contentHash = bookRow.contentHash,
-                title = bookRow.title,
-                authors = bookRow.authors,
-                description = bookRow.description,
-                language = bookRow.language,
-                format = bookRow.format,
-                mediaType = bookRow.mediaType,
-                filePath = File(context.filesDir, "books/${bookRow.contentHash}.${extOf(bookRow.filePath)}").absolutePath,
-                fileSize = bookRow.fileSize,
-                coverPath = resolvedCoverPath,
-                importedAt = bookRow.importedAt,
-                lastOpenedAt = bookRow.lastOpenedAt,
-                status = runCatching { ReadingStatus.valueOf(bookRow.status) }.getOrDefault(ReadingStatus.UNREAD),
+        // 事务失败：回滚本次已落盘的书籍文件，返回失败（数据库已由 Room 事务自动回滚）。
+        if (txnResult.isFailure) {
+            committedFiles.forEach { runCatching { it.delete() } }
+            return@withContext Outcome.Failed(
+                UserMessage.Res(R.string.backup_failed, listOf(txnResult.exceptionOrNull()?.message ?: "")),
             )
-            // 用事务性 upsert（BookDao insert 是 ABORT，已存在同 id 用 update 覆盖）
-            upsertBook(entity)
-            if (isConflict) overwritten++ else newBooks++
-
-            // 进度 / 书签 / 批注 / 会话按策略写入
-            restoreRelated(dto, targetBookId, bookRow.id, strategy, local != null)
-            bookIdMap[bookRow.id] = targetBookId
         }
 
-        // 书架 / 关系恢复（LIB-05）：collections 直接 upsert（系统书架确保存在），关系按 bookIdMap 重映射。
-        restoreCollections(dto, bookIdMap)
-
-        // 按书排版恢复（TYPE-05）：SKIP 策略不动本地，其余按 bookIdMap 重映射后 upsert（孤儿跳过）。
+        // 2. settings 覆盖（SKIP 策略不动设置；其余覆盖）。设置在 DB 事务成功后才写，避免半恢复。
         if (strategy != Strategy.SKIP_CONFLICTS) {
-            dto.bookTypography.forEach { row ->
-                val targetBookId = bookIdMap[row.bookId] ?: return@forEach // 书被跳过，覆盖不留孤儿
-                bookTypographyDao.upsert(
-                    BookTypographyEntity(
-                        bookId = targetBookId,
-                        overridesJson = row.overridesJson,
-                        updatedAt = row.updatedAt,
-                    ),
-                )
-            }
-        }
-
-        // 2. settings 覆盖（SKIP 策略不动设置；其余覆盖）
-        if (strategy != Strategy.SKIP_CONFLICTS) {
-            applySettings(dto.settings)
+            applySettings(dto.settings, wipe = strategy != Strategy.MERGE_KEEP_NEWER)
         }
 
         Outcome.Restored(newBooks, overwritten, skipped)
     }
 
-    /** upsert 书：已存在同 id 则先删再插（BookDao insert 是 ABORT，避免冲突）。 */
+    /**
+     * 字段级 upsert 书记录：不存在则 insert；已存在则按 id 做全字段 UPDATE。
+     *
+     * 绝不 delete+insert——delete 会触发外键 CASCADE 连带删掉该书本地进度/书签/批注/排版，
+     * 使 MERGE_KEEP_NEWER 的「本地更新时间」比较基准丢失、备份恒覆盖本地（审查严重问题 #1）。
+     */
     private suspend fun upsertBook(entity: BookEntity) {
-        if (bookDao.getById(entity.id) != null) {
-            bookDao.deleteById(entity.id) // CASCADE 会连带删子表——仅 OVERWRITE/MERGE 走这里需谨慎
+        val existing = bookDao.getById(entity.id)
+        if (existing == null) {
+            bookDao.insert(entity)
+        } else {
+            bookDao.updateAllFields(
+                id = entity.id,
+                contentHash = entity.contentHash,
+                title = entity.title,
+                authors = entity.authors,
+                description = entity.description,
+                language = entity.language,
+                format = entity.format,
+                mediaType = entity.mediaType,
+                filePath = entity.filePath,
+                fileSize = entity.fileSize,
+                coverPath = entity.coverPath,
+                importedAt = entity.importedAt,
+                lastOpenedAt = entity.lastOpenedAt,
+                status = entity.status,
+            )
         }
-        bookDao.insert(entity)
     }
 
     /** 按 [strategy] 写入进度 / 书签 / 批注 / 会话。 */
@@ -338,18 +382,43 @@ class RestoreUseCase(
         }
     }
 
-    /** 把 settings 快照写回 DataStore（backup 覆盖本地）。 */
-    private suspend fun applySettings(settings: Map<String, kotlinx.serialization.json.JsonElement>) {
+    /**
+     * 把 settings 快照写回 DataStore。
+     *
+     * 类型还原（修复审查严重问题 #3）：备份的 JsonPrimitive 丢失了 DataStore 的具体数值类型
+     * （int/float/long/double 是不同 key），恢复时必须按各仓库声明过的 key 类型映射写回，
+     * 否则 key 类型不等 → 读取方拿不到值静默回默认。规则：
+     * 1. 已知类型表（KNOWN_SETTING_KEY_TYPES）命中的 key 按声明类型写；
+     * 2. 未命中的（未来新增 key 的旧备份）：bool 字面量 → boolean，"true"/"false" 字符串
+     *    依规则 1 优先（不走猜测），数值 → double，其余 → string。
+     *
+     * @param wipe true=OVERWRITE_ALL 语义，先清空本地再覆盖；false=MERGE 语义，只覆盖备份中存在的 key。
+     */
+    private suspend fun applySettings(settings: Map<String, kotlinx.serialization.json.JsonElement>, wipe: Boolean) {
         if (settings.isEmpty()) return
         dataStore.edit { prefs ->
-            // 清掉本地 settings key，用 backup 全量覆盖（恢复语义）
-            prefs.clear()
+            if (wipe) prefs.clear()
             settings.forEach { (keyName, value) ->
                 val pv = value as? kotlinx.serialization.json.JsonPrimitive ?: return@forEach
-                when {
-                    pv.isString -> prefs[stringKey(keyName)] = pv.content
-                    pv.content == "true" || pv.content == "false" -> prefs[boolKey(keyName)] = pv.content.toBoolean()
-                    else -> prefs[doubleKey(keyName)] = pv.content.toDoubleOrNull() ?: return@forEach
+                val typeName = KNOWN_SETTING_KEY_TYPES[keyName]
+                when (typeName) {
+                    "bool" -> prefs[booleanPreferencesKey(keyName)] = pv.content.toBoolean()
+                    "int" -> pv.content.toIntOrNull()?.let { prefs[intPreferencesKey(keyName)] = it }
+                    "long" -> pv.content.toLongOrNull()?.let { prefs[longPreferencesKey(keyName)] = it }
+                    "float" -> pv.content.toFloatOrNull()?.let { prefs[floatPreferencesKey(keyName)] = it }
+                    "double" -> pv.content.toDoubleOrNull()?.let {
+                        prefs[androidx.datastore.preferences.core.doublePreferencesKey(keyName)] = it
+                    }
+                    "string" -> prefs[stringPreferencesKey(keyName)] = pv.content
+                    else -> when {
+                        // 未声明的 key：bool 字面量优先（bool 不可能被误存成字符串数值）
+                        pv.content == "true" || pv.content == "false" ->
+                            prefs[booleanPreferencesKey(keyName)] = pv.content.toBoolean()
+                        pv.isString -> prefs[stringPreferencesKey(keyName)] = pv.content
+                        else -> pv.content.toDoubleOrNull()?.let {
+                            prefs[androidx.datastore.preferences.core.doublePreferencesKey(keyName)] = it
+                        } ?: return@forEach
+                    }
                 }
             }
         }
@@ -433,9 +502,40 @@ class RestoreUseCase(
     private companion object {
         const val BACKUP_JSON = "backup.json"
         const val MAX_RESTORE_TOTAL = 1_000_000_000L
-        fun stringKey(name: String) = androidx.datastore.preferences.core.stringPreferencesKey(name)
-        fun boolKey(name: String) = androidx.datastore.preferences.core.booleanPreferencesKey(name)
-        fun doubleKey(name: String) = androidx.datastore.preferences.core.doublePreferencesKey(name)
+
+        /**
+         * 各仓库声明的 DataStore key 类型表（key 名 → 类型名）。
+         * 来源：AppSettingsRepository / ReaderTypographyRepository / ReaderDisplaySettingsRepository /
+         * ReaderTtsPreferencesRepository 的 companion KEY_*。恢复时按此表写回正确的 PreferencesKey 类型，
+         * 避免 key 类型错位导致设置静默丢default（审查严重问题 #3）。
+         * 新增设置 key 时必须同步登记到这里。
+         */
+        val KNOWN_SETTING_KEY_TYPES: Map<String, String> = mapOf(
+            // AppSettingsRepository
+            "app_crash_log_enabled" to "bool",
+            "app_reading_stats_enabled" to "bool",
+            "app_import_tree_uri" to "string",
+            "app_import_auto_scan" to "bool",
+            // ReaderTypographyRepository
+            "font_size" to "double",
+            "font_family" to "string",
+            "font_weight" to "double",
+            "line_height" to "double",
+            "paragraph_spacing" to "double",
+            "page_margins" to "double",
+            "text_align" to "string",
+            "scroll" to "string",
+            "theme" to "string",
+            "volume_key_paging" to "bool",
+            // ReaderDisplaySettingsRepository
+            "display_brightness" to "float",
+            "display_keep_screen_on" to "bool",
+            "display_orientation" to "string",
+            // ReaderTtsPreferencesRepository
+            "tts_speed" to "double",
+            "tts_voice_id" to "string",
+            "tts_timer_minutes" to "int",
+        )
     }
 }
 

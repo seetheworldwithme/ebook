@@ -183,6 +183,7 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideRestoreUseCase(
+        db: BookDatabase,
         bookDao: BookDao,
         progressDao: ReadingProgressDao,
         bookmarkDao: BookmarkDao,
@@ -195,6 +196,6 @@ object DatabaseModule {
         @ApplicationContext context: Context,
     ): com.xuziyue.ebook.data.backup.RestoreUseCase =
         com.xuziyue.ebook.data.backup.RestoreUseCase(
-            bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, bookTypographyDao, dataStore, context,
+            db, bookDao, progressDao, bookmarkDao, annotationDao, sessionDao, collectionDao, collectionBookDao, bookTypographyDao, dataStore, context,
         )
 }

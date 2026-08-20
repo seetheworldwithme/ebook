@@ -23,9 +23,9 @@ class EpubSecurityValidator(
      * 打开 ZIP 中央目录遍历 entries，检查：
      * 1. Zip Slip（路径遍历 / 绝对路径）
      * 2. 条目数超限
-     * 3. 单条目解压大小
-     * 4. 解压总大小
-     * 5. 压缩比（压缩炸弹）
+     * 3. 单条目解压大小（流式实测字节，不信声明值）
+     * 4. 解压总大小（实测累计）
+     * 5. 压缩比（实测总量 / 压缩文件大小）
      *
      * @return [EpubSecurityResult.Safe] 通过；[EpubSecurityResult.Unsafe] 拒绝并附原因。
      */
@@ -48,10 +48,12 @@ class EpubSecurityValidator(
             return EpubSecurityResult.Unsafe(EpubSecurityError.CorruptArchive("无法读取：${e.message}"))
         }
 
+        // 实测解压总字节数（见下方循环说明：声明值可伪造，一律按实际读取计数）。
+        var totalUncompressed = 0L
+
         zipFile.use { zf ->
             val entries = zf.entries()
             var entryCount = 0
-            var totalUncompressed = 0L
 
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
@@ -69,33 +71,43 @@ class EpubSecurityValidator(
                     )
                 }
 
-                val uncompressedSize = entry.size
-                if (uncompressedSize > 0) {
-                    // 3. 单条目大小超限
-                    if (uncompressedSize > config.maxSingleEntrySize) {
+                if (!entry.isDirectory) {
+                    // 3/4. 实测解压字节（修复审查严重问题 #9）：
+                    // 中央目录的 entry.size 是攻击者可伪造的声明值（Java ZipFile 解压不强制
+                    // 实际字节等于声明），且 size<=0（含 -1）的条目原逻辑被完全跳过——
+                    // 恶意 EPUB 声明小尺寸实际解出超大内容可穿透。这里流式读 entry 实测计数，
+                    // 单条目与累计总量都按实际字节判。
+                    var entryActual = 0L
+                    zf.getInputStream(entry).use { stream ->
+                        val buf = ByteArray(32 * 1024)
+                        while (true) {
+                            val n = stream.read(buf)
+                            if (n <= 0) break
+                            entryActual += n
+                            if (entryActual > config.maxSingleEntrySize) {
+                                return EpubSecurityResult.Unsafe(
+                                    EpubSecurityError.EntryTooLarge(entry.name, entryActual, config.maxSingleEntrySize),
+                                )
+                            }
+                        }
+                    }
+                    totalUncompressed += entryActual
+                    if (totalUncompressed > config.maxTotalUncompressedSize) {
                         return EpubSecurityResult.Unsafe(
-                            EpubSecurityError.EntryTooLarge(entry.name, uncompressedSize, config.maxSingleEntrySize),
+                            EpubSecurityError.TotalSizeExceeded(totalUncompressed, config.maxTotalUncompressedSize),
                         )
                     }
-                    totalUncompressed += uncompressedSize
                 }
             }
+        }
 
-            // 4. 解压总大小超限
-            if (totalUncompressed > config.maxTotalUncompressedSize) {
+        // 5. 压缩比异常（基于实测解压字节数计算；声明值可伪造，实测才可信）
+        if (totalUncompressed > 0) {
+            val ratio = totalUncompressed.toDouble() / compressedSize.toDouble()
+            if (ratio > config.maxCompressionRatio) {
                 return EpubSecurityResult.Unsafe(
-                    EpubSecurityError.TotalSizeExceeded(totalUncompressed, config.maxTotalUncompressedSize),
+                    EpubSecurityError.CompressionBomb(ratio, config.maxCompressionRatio),
                 )
-            }
-
-            // 5. 压缩比异常（压缩炸弹）
-            if (totalUncompressed > 0) {
-                val ratio = totalUncompressed.toDouble() / compressedSize.toDouble()
-                if (ratio > config.maxCompressionRatio) {
-                    return EpubSecurityResult.Unsafe(
-                        EpubSecurityError.CompressionBomb(ratio, config.maxCompressionRatio),
-                    )
-                }
             }
         }
 
@@ -161,11 +173,11 @@ class EpubSecurityValidator(
 data class EpubSecurityConfig(
     /** 最大条目数（合法 EPUB 最多数百条目）。 */
     val maxEntryCount: Int = 10_000,
-    /** 解压后总大小上限（压缩炸弹防御）。 */
+    /** 解压后总大小上限（压缩炸弹防御；按实测字节计数）。 */
     val maxTotalUncompressedSize: Long = 500L * 1024 * 1024,
-    /** 单条目解压大小上限。 */
+    /** 单条目解压大小上限（按实测字节计数）。 */
     val maxSingleEntrySize: Long = 100L * 1024 * 1024,
-    /** 压缩比上限（经典 zip bomb ≫ 100:1）。 */
+    /** 压缩比上限（经典 zip bomb ≫ 100:1；基于实测字节计算）。 */
     val maxCompressionRatio: Double = 103.0,
 ) {
     companion object {
@@ -218,7 +230,7 @@ sealed class EpubSecurityError {
         override val message: String = "条目数过多（$actual），上限 $limit"
     }
 
-    /** 压缩比异常（疑似压缩炸弹）。 */
+    /** 压缩比异常（疑似压缩炸弹；ratio 基于实测解压字节）。 */
     class CompressionBomb(val ratio: Double, val limit: Double) : EpubSecurityError() {
         override val message: String =
             "压缩比异常（${"%.1f".format(ratio)}:1，上限 ${"%.1f".format(limit)}:1）"

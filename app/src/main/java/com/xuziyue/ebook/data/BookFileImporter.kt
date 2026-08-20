@@ -110,13 +110,22 @@ class BookFileImporter(private val context: Context) {
         }
     }
 
-    /** 复制流的同时计算 SHA-256，返回十六进制哈希。 */
+    /** 复制流的同时计算 SHA-256，返回十六进制哈希；累计字节超上限中止（修复审查严重问题 #10）。 */
     private fun InputStream.copyToWithHash(output: java.io.OutputStream): String {
         val buf = ByteArray(64 * 1024)
         val digest = java.security.MessageDigest.getInstance("SHA-256")
+        var total = 0L
         while (true) {
             val n = read(buf)
             if (n <= 0) break
+            total += n
+            // querySize 查不到（云盘 SAF provider 返回 -1）时预检被跳过，这里按实测字节兜底，
+            // 防止任意大流被完整拷入直到写满磁盘。
+            if (total > EpubSecurityValidator.MAX_IMPORT_SIZE) {
+                throw ImportSafetyException(
+                    EpubSecurityError.FileTooLarge(total, EpubSecurityValidator.MAX_IMPORT_SIZE),
+                )
+            }
             digest.update(buf, 0, n)
             output.write(buf, 0, n)
         }

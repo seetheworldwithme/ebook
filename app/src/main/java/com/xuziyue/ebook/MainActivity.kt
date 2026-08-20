@@ -500,9 +500,12 @@ private fun LibraryScreen(
                                     },
                                     onLongClick = {
                                         if (selectionMode) viewModel.toggleSelection(item.book.id)
-                                        else viewModel.enterSelectionMode(item.book.id)
+                                        else {
+                                            // IMP-07：非批量模式长按 → 单本删除确认（修复审查严重问题 #5：原入口不可达）
+                                            pendingDelete = item
+                                        }
                                     },
-                                    onLongClickLabel = stringResource(R.string.batch_selected_count, selectedIds.size),
+                                    onLongClickLabel = deleteLongClickLabel,
                                 )
                                 HorizontalDivider()
                             }
@@ -527,9 +530,12 @@ private fun LibraryScreen(
                                     },
                                     onLongClick = {
                                         if (selectionMode) viewModel.toggleSelection(item.book.id)
-                                        else viewModel.enterSelectionMode(item.book.id)
+                                        else {
+                                            // IMP-07：非批量模式长按 → 单本删除确认（修复审查严重问题 #5：原入口不可达）
+                                            pendingDelete = item
+                                        }
                                     },
-                                    onLongClickLabel = stringResource(R.string.batch_selected_count, selectedIds.size),
+                                    onLongClickLabel = deleteLongClickLabel,
                                 )
                             }
                         }
@@ -575,11 +581,10 @@ private fun LibraryScreen(
             collections = collections,
             initiallySelected = emptySet(),
             onConfirm = { selected ->
-                // 批量加入：对每个选中的书架执行 addSelectedToCollection
-                val first = collections.firstOrNull { it.id in selected }
-                if (first != null) {
-                    val name = if (first.kind == CollectionKind.SYSTEM_FAVORITE) favoriteName else first.name
-                    viewModel.addSelectedToCollection(first.id, name)
+                // 批量加入：对每个选中的书架执行 addSelectedToCollection（多选语义，修复审查严重问题 #4）
+                collections.filter { it.id in selected }.forEach { collection ->
+                    val name = if (collection.kind == CollectionKind.SYSTEM_FAVORITE) favoriteName else collection.name
+                    viewModel.addSelectedToCollection(collection.id, name)
                 }
                 showCollectionPicker = false
             },

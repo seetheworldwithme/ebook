@@ -56,7 +56,7 @@ class BackupRestoreEndToEndTest {
             dataStore, ctx,
         )
         restoreUseCase = RestoreUseCase(
-            db.bookDao(), db.readingProgressDao(), db.bookmarkDao(),
+            db, db.bookDao(), db.readingProgressDao(), db.bookmarkDao(),
             db.annotationDao(), db.readingSessionDao(),
             db.collectionDao(), db.collectionBookDao(),
             db.bookTypographyDao(),
