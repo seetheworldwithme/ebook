@@ -1,0 +1,15 @@
+name: Diag repos
+on: workflow_dispatch
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in \
+            "https://repo.maven.apache.org/maven2/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.3.4/com.google.devtools.ksp.gradle.plugin-2.3.4.pom" \
+            "https://dl.google.com/dl/android/maven2/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.3.4/com.google.devtools.ksp.gradle.plugin-2.3.4.pom" \
+            "https://maven.aliyun.com/repository/central/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.3.4/com.google.devtools.ksp.gradle.plugin-2.3.4.pom" \
+            "https://maven.aliyun.com/repository/google/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.3.4/com.google.devtools.ksp.gradle.plugin-2.3.4.pom" \
+            "https://plugins.gradle.org/m2/com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin/2.3.4/com.google.devtools.ksp.gradle.plugin-2.3.4.pom"; do
+            printf '%s -> ' "$u"; curl -sS -o /dev/null -w '%{http_code}\n' --max-time 20 "$u" || echo CURL_FAIL
+          done
